@@ -1,33 +1,43 @@
-# Simulacra · Caldo de partículas primordial
+# Simulacra · Terrario de vida artificial
 
-Una simulación de **vida artificial** en un único archivo HTML, sin dependencias.
-Miles de partículas de hasta seis especies interactúan a través de una matriz de
-atracción y repulsión: nadie programa las "criaturas" —células, enjambres y
-organismos que se persiguen **emergen** de las reglas.
-
-Modelo: *Particle Life* (curva de fuerza de Tom Mohr) sobre un espacio toroidal,
-con partición espacial en rejilla y arreglos tipados para correr fluido con miles
-de partículas.
+Un **ecosistema vivo** en un único archivo HTML, sin dependencias. Plantas,
+herbívoros y depredadores comparten un estanque: comen, huyen, cazan, se
+reproducen (con mutaciones que se heredan) y mueren. Nadie guía a nadie — las
+poblaciones se equilibran solas en oscilaciones de tipo depredador-presa.
 
 ## Verlo
 
-- **En vivo (GitHub Pages):** se publica solo en cada push vía el workflow de
-  `.github/workflows/deploy-pages.yml`.
+- **En vivo (GitHub Pages):** https://eljocker.github.io/Simulacra — se publica
+  solo en cada push vía `.github/workflows/deploy-pages.yml`.
 - **Local:** abre `index.html` en cualquier navegador. No necesita servidor.
+
+## Qué estás viendo
+
+| | |
+|---|---|
+| 🟢 **Planta** | Alimento que crece solo por el estanque. |
+| 🐟 **Herbívoro** | Busca plantas para comer; huye de los depredadores. |
+| 🦈 **Depredador** | Caza herbívoros. |
+
+Cada ser tiene energía, edad y genes (velocidad, vista, tamaño). Con energía
+suficiente se reproduce y su cría hereda los genes con pequeñas mutaciones —
+así el terrario **evoluciona** con el tiempo. Sin comida, la energía baja y muere.
 
 ## Controles
 
-- **Reglas** — genera una biología nueva al instante.
-- **Ecosistemas** — presets: Células, Enjambre, Persecución, Depredador, Órbitas, Caos.
-- **Matriz de interacción** — clic izquierdo suma atracción, clic derecho suma repulsión.
-- **Sliders** — población, especies, radio de influencia, fuerza, fricción y estela.
-- **Arrastra** sobre el lienzo para agitar el caldo · **shift + arrastra** para dispersar.
-- **Copiar enlace del universo** — comparte tus reglas y parámetros por URL.
+- **Pausa / Reiniciar** el terrario.
+- **+ Comida / + Herbívoro / + Depredador** para intervenir.
+- **Clic** en el estanque suelta comida; **pasa el cursor** sobre un ser para ver
+  su energía, edad y genes.
+- Sliders de **velocidad del tiempo** y **crecimiento de plantas**.
+- Una **gráfica de población** muestra en vivo el sube-y-baja de las tres especies.
 
 ## Cómo funciona
 
-Cada partícula tiene posición, velocidad y especie. Para cada par dentro del radio
-de influencia se aplica una fuerza que depende de la especie de ambas: repulsión
-en el núcleo cercano y atracción/repulsión modulada por la matriz más allá. La
-fricción disipa energía cada paso y el espacio envuelve en los bordes, de modo que
-las estructuras fluyen sin fronteras.
+Cada criatura percibe a su alrededor (rejilla espacial para eficiencia) y toma una
+decisión simple: el herbívoro huye si ve un depredador, si no busca la planta más
+cercana, y si no deambula; el depredador persigue al herbívoro más cercano. Comer
+da energía, moverse la gasta. Al superar un umbral se reproducen; al agotarla o
+envejecer, mueren. Un leve **efecto rescate** hace que lleguen nuevos individuos
+cuando una especie queda al borde de la extinción, de modo que el terrario nunca
+muere del todo y puedes dejarlo corriendo indefinidamente.
