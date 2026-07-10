@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulacra · Caldo de Partículas Primordial</title>
+<meta name="description" content="Simulación de vida artificial — un sistema de Particle Life con comportamiento emergente que corre en tu navegador.">
+<style>
+  :root{
+    --bg:#05070b;
+    --bg2:#080b12;
+    --panel:rgba(14,20,28,.72);
+    --panel-solid:#0e141c;
+    --hair:rgba(120,150,175,.16);
+    --hair-bright:rgba(120,150,175,.32);
+    --ink:#e8eef4;
+    --mut:#7c8a99;
+    --mut-dim:#4d5a68;
+    --accent:#35e0d0;
+    --accent-dim:#1c8f86;
+    --pos:#7be06a;
+    --neg:#ff5a6e;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --sans:"SF Pro Display",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  #field{position:fixed;inset:0;width:100%;height:100%;display:block;background:radial-gradient(120% 120% at 50% 42%,#0a0f18 0%,#05070b 62%,#020306 100%)}
+  .vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(130% 100% at 50% 46%,transparent 46%,rgba(0,0,0,.55) 100%);mix-blend-mode:multiply}
+  .scanline{position:fixed;inset:0;pointer-events:none;opacity:.5;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.14) 3px 4px)}
+
+  /* ---------- masthead ---------- */
+  .masthead{position:fixed;top:0;left:0;padding:26px 30px;pointer-events:none;z-index:5;max-width:min(90vw,520px)}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;gap:10px}
+  .eyebrow::before{content:"";width:22px;height:1px;background:linear-gradient(90deg,var(--accent),transparent)}
+  h1{margin:.32em 0 .18em;font-size:clamp(30px,5.4vw,58px);font-weight:800;line-height:.94;letter-spacing:-.03em;text-wrap:balance}
+  h1 em{font-style:normal;color:var(--accent);}
+  .dek{margin:0;font-size:13.5px;line-height:1.5;color:var(--mut);max-width:42ch;font-weight:450}
+
+  /* ---------- readout (top right) ---------- */
+  .readout{position:fixed;top:24px;right:26px;z-index:5;font-family:var(--mono);font-size:11.5px;color:var(--mut);text-align:right;line-height:1.9;background:linear-gradient(180deg,rgba(8,11,18,.5),transparent);padding:4px 2px;border-right:1px solid var(--hair);padding-right:12px}
+  .readout .row{display:flex;justify-content:flex-end;gap:12px;font-variant-numeric:tabular-nums}
+  .readout .k{color:var(--mut-dim);letter-spacing:.14em;text-transform:uppercase;font-size:10px}
+  .readout .v{color:var(--ink);min-width:58px;text-align:right}
+  .readout .v.live{color:var(--accent)}
+
+  /* ---------- dock (control panel) ---------- */
+  .dock{position:fixed;left:24px;bottom:24px;z-index:6;width:min(340px,calc(100vw - 48px));
+    background:var(--panel);backdrop-filter:blur(18px) saturate(1.3);-webkit-backdrop-filter:blur(18px) saturate(1.3);
+    border:1px solid var(--hair);border-radius:16px;box-shadow:0 24px 60px -20px rgba(0,0,0,.8),inset 0 1px 0 rgba(255,255,255,.05);
+    overflow:hidden;transition:transform .38s cubic-bezier(.2,.9,.3,1)}
+  .dock.collapsed{transform:translateY(calc(100% - 52px))}
+  .dock-head{display:flex;align-items:center;gap:10px;padding:15px 16px;cursor:pointer;user-select:none;border-bottom:1px solid transparent;transition:border-color .3s}
+  .dock:not(.collapsed) .dock-head{border-color:var(--hair)}
+  .dock-head .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .dock-head h2{margin:0;font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--mut);flex:1}
+  .dock-head .chev{color:var(--mut-dim);transition:transform .38s;font-size:12px}
+  .dock.collapsed .dock-head .chev{transform:rotate(180deg)}
+  .dock-body{padding:6px 16px 18px}
+
+  .transport{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:10px 0 16px}
+  button.btn{appearance:none;font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--mut);background:rgba(255,255,255,.03);border:1px solid var(--hair);border-radius:9px;padding:9px 6px;cursor:pointer;
+    transition:.16s;display:flex;align-items:center;justify-content:center;gap:6px}
+  button.btn:hover{color:var(--ink);border-color:var(--hair-bright);background:rgba(255,255,255,.06)}
+  button.btn:active{transform:translateY(1px)}
+  button.btn.primary{color:var(--accent);border-color:var(--accent-dim)}
+  button.btn.primary:hover{background:rgba(53,224,208,.1);box-shadow:0 0 0 1px var(--accent-dim)}
+  .ico{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.6}
+
+  .ctrl{margin:13px 0}
+  .ctrl .lab{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:7px}
+  .ctrl .lab .val{color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:0}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:3px;border-radius:3px;background:var(--hair-bright);outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--ink);border:2px solid var(--bg2);box-shadow:0 0 0 1px var(--hair-bright),0 2px 6px rgba(0,0,0,.5);transition:.15s}
+  input[type=range]::-webkit-slider-thumb:hover{background:var(--accent);box-shadow:0 0 0 1px var(--accent),0 0 12px var(--accent)}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border:2px solid var(--bg2);border-radius:50%;background:var(--ink);box-shadow:0 0 0 1px var(--hair-bright)}
+
+  /* ---------- matrix ---------- */
+  .mtx-wrap{margin-top:16px;border-top:1px solid var(--hair);padding-top:14px}
+  .mtx-title{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:10px}
+  .mtx-title .hintx{color:var(--mut-dim);font-size:9.5px;letter-spacing:.05em;text-transform:none}
+  .mtx{display:grid;gap:3px;margin:0 auto;width:max-content}
+  .mtx .cell{width:26px;height:26px;border-radius:5px;cursor:pointer;position:relative;transition:transform .1s}
+  .mtx .cell:hover{transform:scale(1.14);z-index:2;box-shadow:0 0 0 1.5px var(--ink)}
+  .mtx .hdr{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center}
+  .mtx .hdr i{width:11px;height:11px;border-radius:50%;display:block;box-shadow:0 0 8px currentColor}
+  .mtx .corner{width:26px;height:26px}
+
+  .hint{position:fixed;left:0;right:0;bottom:16px;text-align:center;z-index:4;pointer-events:none;font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--mut-dim)}
+  .hint b{color:var(--mut);font-weight:400}
+
+  @media (max-width:640px){
+    .masthead{padding:18px 20px}
+    .readout{top:16px;right:16px;font-size:10.5px}
+    .dock{left:12px;right:12px;bottom:12px;width:auto}
+    .hint{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .dock,.dock-head .chev,.dock-head .dot{transition:none;animation:none}
+  }
+</style>
+</head>
+<body>
+  <canvas id="field"></canvas>
+  <div class="scanline"></div>
+  <div class="vignette"></div>
+
+  <header class="masthead">
+    <div class="eyebrow">Simulacra · Vida Artificial</div>
+    <h1>Caldo de <em>partículas</em><br>primordial</h1>
+    <p class="dek">Miles de partículas, seis especies, una matriz de atracción y repulsión.
+       Nadie programó las criaturas — <b style="color:var(--ink);font-weight:600">emergen</b> de las reglas. Reescribe las reglas y observa nacer otra biología.</p>
+  </header>
+
+  <div class="readout">
+    <div class="row"><span class="k">células</span><span class="v" id="r-count">—</span></div>
+    <div class="row"><span class="k">especies</span><span class="v" id="r-species">—</span></div>
+    <div class="row"><span class="k">fps</span><span class="v live" id="r-fps">—</span></div>
+    <div class="row"><span class="k">estado</span><span class="v live" id="r-state">—</span></div>
+  </div>
+
+  <section class="dock" id="dock">
+    <div class="dock-head" id="dockHead">
+      <span class="dot"></span>
+      <h2>Panel de cultivo</h2>
+      <span class="chev">▾</span>
+    </div>
+    <div class="dock-body">
+      <div class="transport">
+        <button class="btn" id="btnPlay"><svg class="ico" id="playIco" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/></svg><span id="playTxt">Pausa</span></button>
+        <button class="btn" id="btnReset"><svg class="ico" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4h4"/></svg>Sembrar</button>
+        <button class="btn primary" id="btnRules"><svg class="ico" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></svg>Reglas</button>
+      </div>
+
+      <div class="ctrl">
+        <div class="lab">Población <span class="val" id="v-n">1500</span></div>
+        <input type="range" id="s-n" min="200" max="4000" step="100" value="1500">
+      </div>
+      <div class="ctrl">
+        <div class="lab">Especies <span class="val" id="v-k">6</span></div>
+        <input type="range" id="s-k" min="2" max="6" step="1" value="6">
+      </div>
+      <div class="ctrl">
+        <div class="lab">Radio de influencia <span class="val" id="v-r">90</span></div>
+        <input type="range" id="s-r" min="40" max="160" step="5" value="90">
+      </div>
+      <div class="ctrl">
+        <div class="lab">Fuerza <span class="val" id="v-f">1.0</span></div>
+        <input type="range" id="s-f" min="0.2" max="2.5" step="0.05" value="1.0">
+      </div>
+      <div class="ctrl">
+        <div class="lab">Fricción <span class="val" id="v-fr">0.86</span></div>
+        <input type="range" id="s-fr" min="0.60" max="0.97" step="0.01" value="0.86">
+      </div>
+      <div class="ctrl">
+        <div class="lab">Estela <span class="val" id="v-tr">0.16</span></div>
+        <input type="range" id="s-tr" min="0.04" max="1.0" step="0.02" value="0.16">
+      </div>
+
+      <div class="mtx-wrap">
+        <div class="mtx-title"><span>Matriz de interacción</span><span class="hintx">clic +&nbsp;·&nbsp;clic der −</span></div>
+        <div class="mtx" id="mtx"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="hint"><b>arrastra</b> para agitar · <b>shift + arrastra</b> para dispersar</div>
+
+<script>
+(() => {
+  "use strict";
+  const cv = document.getElementById('field');
+  const ctx = cv.getContext('2d', { alpha:false });
+
+  // ---- species palette (bioluminescent) ----
+  const PAL = [
+    [ 53,224,208], // cyan
+    [255, 74,158], // magenta
+    [158,240, 26], // lime
+    [255,176, 32], // amber
+    [149,128,255], // violet
+    [255, 99, 72], // coral
+  ];
+
+  // ---- state ----
+  const S = {
+    n:1500, k:6, rMax:90, force:1.0, friction:0.86, trail:0.16,
+    running:true, W:0, H:0, dpr:1,
+  };
+  let px, py, vx, vy, type;          // typed arrays
+  let matrix = [];                    // k x k attraction coefficients
+  let sprites = [];                   // glow sprite canvases per species
+
+  // ---- sizing ----
+  function resize(){
+    S.dpr = Math.min(window.devicePixelRatio||1, 2);
+    S.W = cv.clientWidth; S.H = cv.clientHeight;
+    cv.width = Math.round(S.W*S.dpr); cv.height = Math.round(S.H*S.dpr);
+    ctx.setTransform(S.dpr,0,0,S.dpr,0,0);
+    ctx.fillStyle = '#05070b'; ctx.fillRect(0,0,S.W,S.H);
+  }
+  window.addEventListener('resize', resize);
+
+  // ---- glow sprites ----
+  function buildSprites(){
+    sprites = [];
+    const R = 9;
+    for(let i=0;i<PAL.length;i++){
+      const s = document.createElement('canvas');
+      s.width = s.height = R*2;
+      const c = s.getContext('2d');
+      const [r,g,b] = PAL[i];
+      const grd = c.createRadialGradient(R,R,0,R,R,R);
+      grd.addColorStop(0,   `rgba(${r},${g},${b},1)`);
+      grd.addColorStop(0.28,`rgba(${r},${g},${b},.85)`);
+      grd.addColorStop(0.6, `rgba(${r},${g},${b},.22)`);
+      grd.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+      c.fillStyle = grd; c.fillRect(0,0,R*2,R*2);
+      sprites.push(s);
+    }
+  }
+
+  // ---- matrix ----
+  function randMatrix(){
+    matrix = [];
+    for(let i=0;i<S.k;i++){
+      matrix[i]=[];
+      for(let j=0;j<S.k;j++){
+        // slight self-cohesion bias, otherwise full range
+        let v = (Math.random()*2-1);
+        if(i===j) v = Math.abs(v)*0.6 + 0.1;
+        matrix[i][j] = Math.round(v*10)/10;
+      }
+    }
+    buildMatrixUI();
+  }
+  function resizeMatrix(){
+    const m = [];
+    for(let i=0;i<S.k;i++){ m[i]=[]; for(let j=0;j<S.k;j++){
+      m[i][j] = (matrix[i] && matrix[i][j]!==undefined) ? matrix[i][j] : Math.round((Math.random()*2-1)*10)/10;
+    }}
+    matrix = m; buildMatrixUI();
+  }
+
+  const mtxEl = document.getElementById('mtx');
+  function cellColor(v){
+    if(v>0)  return `rgba(123,224,106,${.14+ .55*v})`;
+    if(v<0)  return `rgba(255,90,110,${.14+ .55*(-v)})`;
+    return 'rgba(120,150,175,.10)';
+  }
+  function buildMatrixUI(){
+    mtxEl.style.gridTemplateColumns = `repeat(${S.k+1},26px)`;
+    mtxEl.innerHTML='';
+    const corner = document.createElement('div'); corner.className='corner'; mtxEl.appendChild(corner);
+    for(let j=0;j<S.k;j++){ mtxEl.appendChild(hdr(j)); }
+    for(let i=0;i<S.k;i++){
+      mtxEl.appendChild(hdr(i));
+      for(let j=0;j<S.k;j++){
+        const c = document.createElement('div'); c.className='cell';
+        c.style.background = cellColor(matrix[i][j]);
+        c.title = `${lbl(i)}→${lbl(j)} : ${matrix[i][j].toFixed(1)}`;
+        c.addEventListener('click', ()=>bump(i,j,+0.2,c));
+        c.addEventListener('contextmenu', e=>{e.preventDefault();bump(i,j,-0.2,c);});
+        mtxEl.appendChild(c);
+      }
+    }
+  }
+  function hdr(i){
+    const h=document.createElement('div'); h.className='hdr';
+    const dot=document.createElement('i');
+    const [r,g,b]=PAL[i]; dot.style.color=`rgb(${r},${g},${b})`; dot.style.background=`rgb(${r},${g},${b})`;
+    h.appendChild(dot); return h;
+  }
+  const lbl = i => ['A','B','C','D','E','F'][i];
+  function bump(i,j,d,cell){
+    let v = Math.max(-1, Math.min(1, Math.round((matrix[i][j]+d)*10)/10));
+    matrix[i][j]=v;
+    cell.style.background=cellColor(v);
+    cell.title=`${lbl(i)}→${lbl(j)} : ${v.toFixed(1)}`;
+  }
+
+  // ---- particles ----
+  function seed(){
+    px=new Float32Array(S.n); py=new Float32Array(S.n);
+    vx=new Float32Array(S.n); vy=new Float32Array(S.n);
+    type=new Uint8Array(S.n);
+    for(let i=0;i<S.n;i++){
+      px[i]=Math.random()*S.W; py[i]=Math.random()*S.H;
+      vx[i]=0; vy[i]=0; type[i]=(Math.random()*S.k)|0;
+    }
+    ctx.fillStyle='#05070b'; ctx.fillRect(0,0,S.W,S.H);
+  }
+
+  // ---- force curve (Tom Mohr model) ----
+  const BETA = 0.3;
+  function force(r, a){            // r in [0,1]
+    if(r < BETA) return r/BETA - 1;                       // core repulsion
+    if(r < 1)    return a * (1 - Math.abs(2*r - 1 - BETA)/(1 - BETA));
+    return 0;
+  }
+
+  // ---- spatial grid + integration ----
+  let grid, gcols, grows, gsize;
+  function step(dt){
+    const W=S.W,H=S.H,rMax=S.rMax;
+    gsize=rMax; gcols=Math.max(1,Math.ceil(W/gsize)); grows=Math.max(1,Math.ceil(H/gsize));
+    const nc=gcols*grows;
+    if(!grid || grid.length!==nc){ grid=new Array(nc); }
+    for(let c=0;c<nc;c++) grid[c]=null;
+    // bin (linked list via head array + next)
+    const next=new Int32Array(S.n);
+    for(let i=0;i<S.n;i++){
+      let cx=(px[i]/gsize)|0, cy=(py[i]/gsize)|0;
+      if(cx<0)cx=0;else if(cx>=gcols)cx=gcols-1;
+      if(cy<0)cy=0;else if(cy>=grows)cy=grows-1;
+      const c=cy*gcols+cx;
+      next[i]= (grid[c]===null?-1:grid[c]);
+      grid[c]=i;
+    }
+    const fscale = rMax * S.force * 0.7;
+    for(let i=0;i<S.n;i++){
+      let fx=0, fy=0;
+      const xi=px[i], yi=py[i], ti=type[i];
+      let cx=(xi/gsize)|0, cy=(yi/gsize)|0;
+      if(cx<0)cx=0;else if(cx>=gcols)cx=gcols-1;
+      if(cy<0)cy=0;else if(cy>=grows)cy=grows-1;
+      for(let oy=-1;oy<=1;oy++){
+        let gy=cy+oy; if(gy<0)gy+=grows;else if(gy>=grows)gy-=grows;
+        for(let ox=-1;ox<=1;ox++){
+          let gx=cx+ox; if(gx<0)gx+=gcols;else if(gx>=gcols)gx-=gcols;
+          let j=grid[gy*gcols+gx];
+          while(j!==null && j!==-1){
+            if(j!==i){
+              let dx=px[j]-xi, dy=py[j]-yi;
+              if(dx> W*0.5)dx-=W; else if(dx<-W*0.5)dx+=W;
+              if(dy> H*0.5)dy-=H; else if(dy<-H*0.5)dy+=H;
+              const d2=dx*dx+dy*dy;
+              if(d2>0 && d2<rMax*rMax){
+                const d=Math.sqrt(d2);
+                const f=force(d/rMax, matrix[ti][type[j]]);
+                fx+=(dx/d)*f; fy+=(dy/d)*f;
+              }
+            }
+            j=next[j];
+          }
+        }
+      }
+      vx[i]=vx[i]*S.friction + fx*fscale*dt;
+      vy[i]=vy[i]*S.friction + fy*fscale*dt;
+    }
+    // pointer stir
+    if(ptr.on){
+      const sign = ptr.shift ? -1 : 1;
+      const R=140, R2=R*R;
+      for(let i=0;i<S.n;i++){
+        let dx=ptr.x-px[i], dy=ptr.y-py[i];
+        const d2=dx*dx+dy*dy;
+        if(d2<R2 && d2>1){ const d=Math.sqrt(d2); const k=sign*(1-d/R)*4.2; vx[i]+=dx/d*k; vy[i]+=dy/d*k; }
+      }
+    }
+    // integrate + wrap
+    for(let i=0;i<S.n;i++){
+      px[i]+=vx[i]*dt; py[i]+=vy[i]*dt;
+      if(px[i]<0)px[i]+=W; else if(px[i]>=W)px[i]-=W;
+      if(py[i]<0)py[i]+=H; else if(py[i]>=H)py[i]-=H;
+    }
+  }
+
+  function render(){
+    // trailing fade
+    ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle=`rgba(5,7,11,${S.trail})`;
+    ctx.fillRect(0,0,S.W,S.H);
+    // additive glow
+    ctx.globalCompositeOperation='lighter';
+    for(let i=0;i<S.n;i++){
+      ctx.drawImage(sprites[type[i]], px[i]-9, py[i]-9);
+    }
+    ctx.globalCompositeOperation='source-over';
+  }
+
+  // ---- pointer ----
+  const ptr={on:false,x:0,y:0,shift:false};
+  function pos(e){ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; ptr.x=t.clientX-r.left; ptr.y=t.clientY-r.top; }
+  cv.addEventListener('pointerdown',e=>{ptr.on=true;ptr.shift=e.shiftKey;pos(e);cv.setPointerCapture(e.pointerId);});
+  cv.addEventListener('pointermove',e=>{if(ptr.on){ptr.shift=e.shiftKey;pos(e);}});
+  window.addEventListener('pointerup',()=>ptr.on=false);
+  cv.addEventListener('contextmenu',e=>{if(ptr.on)e.preventDefault();});
+
+  // ---- loop ----
+  let last=performance.now(), fpsAcc=0, fpsN=0, fpsShown=0;
+  const rState=document.getElementById('r-state'),rFps=document.getElementById('r-fps'),
+        rCount=document.getElementById('r-count'),rSpec=document.getElementById('r-species');
+  function frame(now){
+    const real=(now-last)/1000; last=now;
+    if(S.running){ step(0.9); render(); }
+    fpsAcc+=real; fpsN++;
+    if(fpsAcc>=0.5){ fpsShown=Math.round(fpsN/fpsAcc); fpsAcc=0;fpsN=0; rFps.textContent=fpsShown; }
+    requestAnimationFrame(frame);
+  }
+
+  // ---- UI wiring ----
+  const $=id=>document.getElementById(id);
+  function bindSlider(id, vid, key, fmt, after){
+    const s=$(id), v=$(vid);
+    s.addEventListener('input',()=>{
+      let val=parseFloat(s.value); S[key]=val;
+      v.textContent=fmt?fmt(val):val;
+      if(after)after(val);
+    });
+  }
+  bindSlider('s-n','v-n','n',v=>v,()=>{seed();rCount.textContent=S.n;});
+  bindSlider('s-k','v-k','k',v=>v,()=>{resizeMatrix();seed();rSpec.textContent=S.k;});
+  bindSlider('s-r','v-r','rMax',v=>v);
+  bindSlider('s-f','v-f','force',v=>v.toFixed(2));
+  bindSlider('s-fr','v-fr','friction',v=>v.toFixed(2));
+  bindSlider('s-tr','v-tr','trail',v=>v.toFixed(2));
+
+  $('btnPlay').addEventListener('click',()=>{
+    S.running=!S.running;
+    $('playTxt').textContent=S.running?'Pausa':'Correr';
+    rState.textContent=S.running?'vivo':'quieto';
+    $('playIco').innerHTML=S.running
+      ? '<rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/>'
+      : '<path d="M7 5l12 7-12 7z" fill="currentColor" stroke="none"/>';
+  });
+  $('btnReset').addEventListener('click',()=>seed());
+  $('btnRules').addEventListener('click',()=>{randMatrix();});
+
+  const dock=$('dock');
+  $('dockHead').addEventListener('click',()=>dock.classList.toggle('collapsed'));
+  if(window.innerWidth<=640) dock.classList.add('collapsed');
+
+  // ---- boot ----
+  resize(); buildSprites(); randMatrix(); seed();
+  rCount.textContent=S.n; rSpec.textContent=S.k; rState.textContent='vivo';
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
