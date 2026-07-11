@@ -77,8 +77,10 @@ export class GrassField {
   }
 
   toJSON(): GrassSnapshot {
-    // round to 3 decimals to keep snapshots compact
-    return { cell: this.cell, cols: this.cols, rows: this.rows, density: Array.from(this.density, (v) => Math.round(v * 1000) / 1000) };
+    // full precision: a Float32 stringified and re-parsed recovers exactly, so a
+    // loaded snapshot reproduces the simulation bit-for-bit (the grass gradient
+    // that steers grazing is sensitive to tiny differences)
+    return { cell: this.cell, cols: this.cols, rows: this.rows, density: Array.from(this.density) };
   }
 
   load(s: GrassSnapshot): void {

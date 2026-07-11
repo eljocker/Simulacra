@@ -145,7 +145,16 @@ export class World {
       else if (a.y > this.h - m) a.vy -= (a.y - (this.h - m)) * 3 * dt;
       a.x = Math.max(3, Math.min(this.w - 3, a.x));
       a.y = Math.max(3, Math.min(this.h - 3, a.y));
-      if (a.vx || a.vy) a.heading = Math.atan2(a.vy, a.vx);
+      // turn smoothly toward travel direction, and only when actually moving,
+      // so a near-stopped animal never spins in place (calm, painting-like)
+      if (a.vx * a.vx + a.vy * a.vy > 16) {
+        const targetH = Math.atan2(a.vy, a.vx);
+        let dh = targetH - a.heading;
+        while (dh > Math.PI) dh -= Math.PI * 2;
+        while (dh < -Math.PI) dh += Math.PI * 2;
+        const maxTurn = 3.2 * dt; // rad/s cap
+        a.heading += dh < -maxTurn ? -maxTurn : dh > maxTurn ? maxTurn : dh;
+      }
 
       const speed = Math.hypot(a.vx, a.vy);
       a.energy -= (def.metabolism + def.moveCost * speed + (a.sick > 0 ? 2.4 : 0)) * dt;

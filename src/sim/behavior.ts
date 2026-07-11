@@ -16,22 +16,26 @@ export interface BehaviorCtx {
   h: number;
 }
 
-function accelerateTowards(a: Animal, tx: number, ty: number, spd: number, dt: number, flee = false): void {
+// Ease velocity toward a target. `arrive` > 0 makes the animal slow to a stop as
+// it nears the target instead of overshooting and oscillating around it.
+function accelerateTowards(a: Animal, tx: number, ty: number, spd: number, dt: number, flee = false, arrive = 0): void {
   let dx = tx - a.x, dy = ty - a.y;
   const d = Math.hypot(dx, dy) || 1;
   if (flee) { dx = -dx; dy = -dy; }
-  const desiredX = (dx / d) * spd;
-  const desiredY = (dy / d) * spd;
-  const k = Math.min(1, dt * 4);
+  const s = arrive > 0 && d < arrive ? spd * (d / arrive) : spd;
+  const desiredX = (dx / d) * s;
+  const desiredY = (dy / d) * s;
+  const k = Math.min(1, dt * 3.2);
   a.vx += (desiredX - a.vx) * k;
   a.vy += (desiredY - a.vy) * k;
 }
 
+// Gentle, slowly-drifting wander (calm, not frantic).
 function roam(a: Animal, spd: number, dt: number, rng: RNG): void {
-  a.wander += rng.range(-2.4, 2.4) * dt;
-  const desiredX = Math.cos(a.wander) * spd * 0.5;
-  const desiredY = Math.sin(a.wander) * spd * 0.5;
-  const k = Math.min(1, dt * 1.4);
+  a.wander += rng.range(-1.1, 1.1) * dt;
+  const desiredX = Math.cos(a.wander) * spd * 0.42;
+  const desiredY = Math.sin(a.wander) * spd * 0.42;
+  const k = Math.min(1, dt * 1.1);
   a.vx += (desiredX - a.vx) * k;
   a.vy += (desiredY - a.vy) * k;
 }
@@ -43,20 +47,20 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
 
   if (def.diet === 'carnivore') {
     const prey = ctx.grid.nearest(a.x, a.y, a.genes.sense, (o) => def.preys.includes(o.species), a);
-    if (prey) accelerateTowards(a, prey.x, prey.y, spd, ctx.dt, false);
+    if (prey) accelerateTowards(a, prey.x, prey.y, spd, ctx.dt, false, a.genes.size + 12);
     else roam(a, spd, ctx.dt, ctx.rng);
     return;
   }
 
-  // herbivore: flee threats first
+  // herbivore: flee threats first (no arrival — keep running)
   if (def.fleesFrom.length) {
     const threat = ctx.grid.nearest(a.x, a.y, a.genes.sense, (o) => def.fleesFrom.includes(o.species), a);
     if (threat) {
-      accelerateTowards(a, threat.x, threat.y, spd * 1.35, ctx.dt, true);
+      accelerateTowards(a, threat.x, threat.y, spd * 1.3, ctx.dt, true);
       return;
     }
   }
-  // seek grain (scattered feed) if close — it's the tastiest
+  // seek the nearest scattered grain, easing in so they don't pile-bounce on it
   if (ctx.grain.length) {
     let best: Grain | null = null;
     let bd = a.genes.sense * a.genes.sense;
@@ -64,20 +68,19 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
       const dd = (g.x - a.x) ** 2 + (g.y - a.y) ** 2;
       if (dd < bd) { bd = dd; best = g; }
     }
-    if (best) { accelerateTowards(a, best.x, best.y, spd, ctx.dt, false); return; }
+    if (best) { accelerateTowards(a, best.x, best.y, spd, ctx.dt, false, a.genes.size + 10); return; }
   }
-  // otherwise wander toward greener grass nearby (sample a few directions)
-  if (a.energy < def.reproduceAt * 0.85) {
-    let bx = a.x, by = a.y, bv = ctx.grass.at(a.x, a.y);
-    for (let s = 0; s < 5; s++) {
-      const ang = ctx.rng.range(0, Math.PI * 2);
-      const r = a.genes.sense * 0.7;
-      const sx = a.x + Math.cos(ang) * r;
-      const sy = a.y + Math.sin(ang) * r;
-      const v = ctx.grass.at(sx, sy);
-      if (v > bv) { bv = v; bx = sx; by = sy; }
+  // if hungry and the grass underfoot is thin, drift toward greener grass by
+  // following the grass gradient (a deterministic cross sample — stable target,
+  // no per-frame randomness, so no jitter)
+  if (a.energy < def.reproduceAt * 0.85 && ctx.grass.at(a.x, a.y) < 0.55) {
+    const r = a.genes.sense * 0.5;
+    const gx = ctx.grass.at(a.x + r, a.y) - ctx.grass.at(a.x - r, a.y);
+    const gy = ctx.grass.at(a.x, a.y + r) - ctx.grass.at(a.x, a.y - r);
+    if (Math.abs(gx) + Math.abs(gy) > 0.04) {
+      accelerateTowards(a, a.x + gx * 200, a.y + gy * 200, spd * 0.8, ctx.dt);
+      return;
     }
-    if (bv > 0.15 && (bx !== a.x || by !== a.y)) { accelerateTowards(a, bx, by, spd * 0.85, ctx.dt); return; }
   }
   roam(a, spd, ctx.dt, ctx.rng);
 }
