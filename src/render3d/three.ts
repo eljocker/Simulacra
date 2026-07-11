@@ -55,13 +55,28 @@ function nightFactor(clock: number): number {
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
+// soft radial glow for the sun/moon sprite
+function makeGlowTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.22, 'rgba(255,246,222,0.95)');
+  grd.addColorStop(0.5, 'rgba(255,228,160,0.42)');
+  grd.addColorStop(1, 'rgba(255,220,150,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+}
+
 export class ThreeRenderer implements IRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera: THREE.OrthographicCamera;
   private hemi: THREE.HemisphereLight;
   private sun: THREE.DirectionalLight;
-  private sunBall: THREE.Mesh;
+  private sunSprite: THREE.Sprite;
   private ground: THREE.Mesh;
   private scenery = new THREE.Group();
   private meshes = {} as Record<SpeciesId, THREE.InstancedMesh>;
@@ -89,8 +104,12 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xfff2d6, 1.4);
     this.scene.add(this.sun, this.sun.target);
-    this.sunBall = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xfff0c0 }));
-    this.scene.add(this.sunBall);
+    // soft glowing sun/moon: a camera-facing sprite with a radial-gradient glow
+    this.sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: makeGlowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    this.sunSprite.scale.setScalar(20);
+    this.scene.add(this.sunSprite);
 
     this.ground = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0x5f8f3e, roughness: 1 }));
     this.ground.rotation.x = -Math.PI / 2;
@@ -291,8 +310,10 @@ export class ThreeRenderer implements IRenderer {
     const ang = world.clock * Math.PI * 2 - Math.PI / 2;
     const R = this.camDist;
     this.sun.position.set(Math.cos(ang) * R * 0.6, Math.sin(ang) * R * 0.55 + 4, R * 0.3);
-    this.sunBall.position.copy(this.sun.position).multiplyScalar(0.5);
-    (this.sunBall.material as THREE.MeshBasicMaterial).color.setRGB(lerp(1, 0.7, n), lerp(0.94, 0.75, n), lerp(0.75, 0.95, n));
+    this.sunSprite.position.copy(this.sun.position).multiplyScalar(0.62);
+    const sm = this.sunSprite.material as THREE.SpriteMaterial;
+    sm.color.setRGB(lerp(1, 0.55, n), lerp(0.93, 0.62, n), lerp(0.7, 0.98, n)); // warm sun → cool moon
+    sm.opacity = lerp(0.95, 0.7, n);
 
     // weather
     this.rain.visible = world.weather === 'rain';
