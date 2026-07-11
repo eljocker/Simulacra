@@ -352,6 +352,11 @@ export class World {
       if (dead.has(a.id)) continue;
       const def = SPECIES[a.species];
       a.age += dt;
+      // birthday milestone: each whole day of life survived is logged to its story
+      const dayNow = Math.floor(a.age / DAY_LENGTH);
+      if (dayNow >= 1 && dayNow > Math.floor((a.age - dt) / DAY_LENGTH)) {
+        this.logEvent({ kind: 'milestone', species: a.species, id: a.id, cause: 'dia', age: a.age });
+      }
       a.cooldown -= dt;
       if (a.mealCd > 0) a.mealCd -= dt;
       if (a.born < 1) a.born = Math.min(1, a.born + dt * 2.5);

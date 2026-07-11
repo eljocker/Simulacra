@@ -51,7 +51,7 @@ export type Intervention =
   | { kind: 'meteor'; x?: number; y?: number }
   | { kind: 'feed'; x?: number; y?: number };
 
-export type LifeEventKind = 'birth' | 'death' | 'divine' | 'meal';
+export type LifeEventKind = 'birth' | 'death' | 'divine' | 'meal' | 'milestone';
 
 // One entry in the world's log — a life story is the events sharing an `id`.
 export interface LifeEvent {

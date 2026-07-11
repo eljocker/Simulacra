@@ -44,9 +44,9 @@ function describe(e: LifeEvent): { icon: string; main: string; sub: string; tone
 
 export function Bitacora({ events }: { events: LifeEvent[] }) {
   const [open, setOpen] = useState(window.innerWidth > 900);
-  // meals live in each animal's own story (the Ficha) — the Bitácora stays a
-  // feed of births, deaths and divine acts so it doesn't drown in "comió" lines.
-  const feed = events.filter((e) => e.kind !== 'meal');
+  // meals and birthdays live in each animal's own story (the Ficha) — the Bitácora
+  // stays a feed of births, deaths and divine acts so it doesn't get too noisy.
+  const feed = events.filter((e) => e.kind !== 'meal' && e.kind !== 'milestone');
   const recent = feed.slice(-80).reverse();
   return (
     <section className={`bitacora${open ? '' : ' closed'}`}>

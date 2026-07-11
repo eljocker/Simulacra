@@ -1,9 +1,9 @@
 import type { Engine } from '../engine/loop.ts';
 import type { LifeEvent } from '../sim/types.ts';
 import type { EntityKind, SelectedInfo } from '../engine/store.ts';
-import { fullness, growthFactor, hungerLabel, lifeStage } from '../sim/species.ts';
+import { SPECIES, fullness, growthFactor, hungerLabel, lifeStage } from '../sim/species.ts';
 import { SCAV_MAXAGE, SCAV_REPRO_AT } from '../sim/world.ts';
-import { ageLabel } from '../sim/time.ts';
+import { DAY_LENGTH, ageLabel } from '../sim/time.ts';
 
 const MEAL: Record<string, string> = {
   pasto: '🌾 Pastó', grano: '🌽 Comió grano', fruta: '🍎 Comió fruta', presa: '🍖 Cazó una presa',
@@ -50,6 +50,10 @@ function line(e: LifeEvent): { ic: string; txt: string; tone: string } {
   if (e.kind === 'meal') {
     const m = MEAL[e.cause ?? ''] ?? '🍽 Comió';
     return { ic: m.split(' ')[0], txt: m.replace(/^\S+\s/, ''), tone: 'meal' };
+  }
+  if (e.kind === 'milestone') {
+    const days = Math.max(1, Math.round((e.age ?? 0) / DAY_LENGTH));
+    return { ic: '🎂', txt: `Cumplió ${days} día${days > 1 ? 's' : ''} de vida`, tone: 'milestone' };
   }
   return { ic: '✨', txt: 'Intervención divina', tone: 'divine' };
 }
@@ -139,14 +143,21 @@ export function Ficha({ engine, selected, events }: { engine: Engine; selected: 
               </div>
             );
           })()}
-          {selected.genes && (
-            <div className="fk-genes">
-              <span className="fk-gt">Genes</span>
-              <Bar label="⚡ Velocidad" v={selected.genes.speed} max={2} color="#e8c15a" />
-              <Bar label="👁 Sentido" v={selected.genes.sense} max={2} color="#7fc7e8" />
-              <Bar label="⬆ Tamaño" v={selected.genes.size} max={2} color="#c88fe0" />
-            </div>
-          )}
+          {selected.genes && (() => {
+            // current ABILITY, not raw genes: genetic potential scaled by maturity —
+            // so a newborn is low across the board and grows into its full potential.
+            const def = SPECIES[selected.species as keyof typeof SPECIES];
+            const g = growthFactor(selected.species, selected.age ?? 0);
+            const genes = selected.genes!;
+            return (
+              <div className="fk-genes">
+                <span className="fk-gt">Aptitudes <span className="fk-gt-sub">crecen con la edad</span></span>
+                <Bar label="⚡ Velocidad" v={genes.speed * g} max={def.speed * 1.5} color="#e8c15a" />
+                <Bar label="👁 Sentido" v={genes.sense * g} max={def.sense * 1.5} color="#7fc7e8" />
+                <Bar label="⬆ Tamaño" v={genes.size * g} max={def.size * 1.3} color="#c88fe0" />
+              </div>
+            );
+          })()}
         </div>
       )}
 

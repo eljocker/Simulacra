@@ -401,6 +401,7 @@ body.gallery.idle .gallery-btn { opacity: 0; }
 .fk-meta b { color: var(--ink); }
 .fk-genes { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .fk-gt { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-soft); display: block; margin-bottom: 6px; }
+.fk-gt-sub { letter-spacing: 0; text-transform: none; opacity: 0.7; font-family: var(--sans); }
 .fk-story { border-top: 1px solid var(--line); padding: 10px 12px 12px; max-height: 168px; overflow-y: auto; scrollbar-width: thin; }
 .fk-st-lab { font-family: var(--mono); font-size: 10px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 7px; }
 .fk-empty { font-size: 11px; color: var(--ink-soft); }
@@ -410,6 +411,7 @@ body.gallery.idle .gallery-btn { opacity: 0; }
 .fk-ev.death { background: rgba(194, 80, 60, 0.08); }
 .fk-ev.divine { background: rgba(207, 156, 30, 0.12); }
 .fk-ev.meal { background: rgba(90, 148, 64, 0.06); }
+.fk-ev.milestone { background: rgba(207, 156, 30, 0.14); }
 .fk-ev-ic { font-size: 14px; width: 18px; text-align: center; flex: none; }
 .fk-ev-tx { flex: 1; color: var(--ink); }
 .fk-ev-tm { font-family: var(--mono); font-size: 10px; color: var(--ink-soft); flex: none; font-variant-numeric: tabular-nums; }

@@ -58,9 +58,10 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
 export const HERBIVORES: SpeciesId[] = ['chicken', 'sheep', 'cow'];
 
 // Juveniles are born small and grow to full size by adulthood, then hold.
-// PURE function of age — used only for rendering and the creature card, never
-// for sim dynamics, so population balance and snapshots stay unaffected.
-const NEWBORN_SCALE = 0.5; // fraction of adult size at birth
+// PURE function of age, so snapshots stay deterministic. Drives render scale, the
+// Ficha ability bars, AND sim speed/sense — a juvenile is small, slow and less
+// perceptive, growing into its full genetic potential as it matures.
+const NEWBORN_SCALE = 0.5; // fraction of adult size (and ability) at birth
 export function growthFactor(species: SpeciesId, age: number): number {
   const mature = SPECIES[species].matureAt; // reaches adult size at maturity (independent of lifespan)
   const t = Math.max(0, Math.min(1, age / mature));

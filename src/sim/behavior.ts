@@ -1,6 +1,6 @@
 import type { Animal, Fruit, Grain } from './types.ts';
 import type { SpeciesDef } from './species.ts';
-import { SPECIES } from './species.ts';
+import { SPECIES, growthFactor } from './species.ts';
 import type { SpatialGrid } from './grid.ts';
 import type { GrassField } from './grass.ts';
 import type { RNG } from './rng.ts';
@@ -81,7 +81,11 @@ function flock(a: Animal, spd: number, ctx: BehaviorCtx): void {
 // Decide this animal's velocity for the frame. Returns nothing; world integrates.
 export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   const nightSlow = 1 - 0.45 * ctx.night;
-  const spd = a.genes.speed * nightSlow;
+  // juveniles are genuinely slower and less perceptive; they grow into their full
+  // genetic speed & sense as they mature (matches the size growth and the Ficha bars)
+  const grow = growthFactor(a.species, a.age);
+  const spd = a.genes.speed * grow * nightSlow;
+  const sense = a.genes.sense * grow;
 
   // deep night: the whole farm sleeps. Predators rest too, so it is safe for
   // everyone to settle in place — they ease to a stop and doze until dawn.
@@ -105,7 +109,7 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   if (def.diet === 'carnivore') {
     // each predator claims a DIFFERENT prey so they spread out instead of
     // stacking on the same target (which read as ghosting)
-    const prey = ctx.grid.nearest(a.x, a.y, a.genes.sense, (o) => def.preys.includes(o.species) && !ctx.claimed.has(o.id), a);
+    const prey = ctx.grid.nearest(a.x, a.y, sense, (o) => def.preys.includes(o.species) && !ctx.claimed.has(o.id), a);
     if (prey) { ctx.claimed.add(prey.id); accelerateTowards(a, prey.x, prey.y, spd, ctx.dt, false, a.genes.size + 12); }
     else roam(a, spd, ctx.dt, ctx.rng);
     return;
@@ -113,7 +117,7 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
 
   // herbivore: flee threats first (no arrival — keep running)
   if (def.fleesFrom.length) {
-    const threat = ctx.grid.nearest(a.x, a.y, a.genes.sense, (o) => def.fleesFrom.includes(o.species), a);
+    const threat = ctx.grid.nearest(a.x, a.y, sense, (o) => def.fleesFrom.includes(o.species), a);
     if (threat) {
       accelerateTowards(a, threat.x, threat.y, spd * 1.3, ctx.dt, true);
       return;
@@ -122,7 +126,7 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   // when a bit hungry, seek the nearest food item — scattered grain or a fallen
   // fruit — easing in so they don't pile-bounce on it
   if (a.energy < def.reproduceAt * 0.9 && (ctx.grain.length || ctx.fruits.length)) {
-    let bx = 0, by = 0, bd = a.genes.sense * a.genes.sense, found = false;
+    let bx = 0, by = 0, bd = sense * sense, found = false;
     for (const g of ctx.grain) {
       const dd = (g.x - a.x) ** 2 + (g.y - a.y) ** 2;
       if (dd < bd) { bd = dd; bx = g.x; by = g.y; found = true; }
@@ -138,7 +142,7 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   // following the grass gradient (a deterministic cross sample — stable target,
   // no per-frame randomness, so no jitter)
   if (a.energy < def.reproduceAt * 0.85 && ctx.grass.at(a.x, a.y) < 0.55) {
-    const r = a.genes.sense * 0.5;
+    const r = sense * 0.5;
     const gx = ctx.grass.at(a.x + r, a.y) - ctx.grass.at(a.x - r, a.y);
     const gy = ctx.grass.at(a.x, a.y + r) - ctx.grass.at(a.x, a.y - r);
     if (Math.abs(gx) + Math.abs(gy) > 0.04) {
