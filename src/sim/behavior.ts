@@ -15,6 +15,7 @@ export interface BehaviorCtx {
   w: number;
   h: number;
   claimed: Set<number>; // prey already targeted this tick, so predators don't pile on one
+  pond: { x: number; y: number; r: number }; // land animals keep out of the lagoon
 }
 
 // Ease velocity toward a target. `arrive` > 0 makes the animal slow to a stop as
@@ -81,6 +82,16 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   const nightSlow = 1 - 0.45 * ctx.night;
   const spd = a.genes.speed * nightSlow;
 
+  // land animals never enter the lagoon — they turn back at the shore
+  const px = a.x - ctx.pond.x, py = a.y - ctx.pond.y;
+  const pd = Math.hypot(px, py);
+  const keep = ctx.pond.r + a.genes.size + 7;
+  if (pd < keep) {
+    const nx = px / (pd || 1), ny = py / (pd || 1);
+    accelerateTowards(a, a.x + nx * 60, a.y + ny * 60, spd, ctx.dt);
+    return;
+  }
+
   if (def.diet === 'carnivore') {
     // each predator claims a DIFFERENT prey so they spread out instead of
     // stacking on the same target (which read as ghosting)
@@ -123,6 +134,17 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   // nothing urgent → flock (if the species gathers) or wander alone
   if (def.flocks) flock(a, spd, ctx);
   else roam(a, spd, ctx.dt, ctx.rng);
+  // gentle habitat affinity: when idle and far from its home range, a species
+  // drifts back toward it — so each animal settles in its own micro-habitat.
+  if (def.home) {
+    const hx = def.home[0] * ctx.w - a.x, hy = def.home[1] * ctx.h - a.y;
+    const hd = Math.hypot(hx, hy);
+    if (hd > ctx.w * 0.16) {
+      const k = Math.min(1, ctx.dt * 0.5);
+      a.vx += ((hx / hd) * spd * 0.42 - a.vx) * k;
+      a.vy += ((hy / hd) * spd * 0.42 - a.vy) * k;
+    }
+  }
 }
 
 export function speciesOf(a: Animal): SpeciesDef {

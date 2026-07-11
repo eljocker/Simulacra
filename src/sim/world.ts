@@ -1,4 +1,4 @@
-import type { Animal, Corpse, Effect, Egg, Grain, Intervention, LifeEvent, Scavenger, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
+import type { Animal, Corpse, Duck, Effect, Egg, Grain, Intervention, LifeEvent, Scavenger, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
 import { SPECIES, HERBIVORES } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
@@ -18,6 +18,10 @@ const SCAV_MIN = 2;        // a couple always circle overhead
 const SCAV_CAP = 6;
 const SCAV_FEED_TIME = 1.3; // seconds to devour a corpse
 const SCAV_REPRO_AT = 150;
+// ducks (aquatic — never leave the pond)
+const DUCK_MIN = 3;
+const DUCK_MAXAGE = 220;
+const DUCK_SPEED = 20;
 
 export class World {
   w: number;
@@ -27,6 +31,7 @@ export class World {
   corpses: Corpse[] = [];
   eggs: Egg[] = [];
   scavengers: Scavenger[] = [];
+  ducks: Duck[] = [];
   grass: GrassField;
   grain: Grain[] = [];
   effects: Effect[] = [];
@@ -38,6 +43,7 @@ export class World {
   born = 0;
   died = 0;
   capScale = 1; // population scaling from terrain size × density (set by the engine)
+  pond = { x: 0, y: 0, r: 0 }; // the lagoon, in world px — land animals border it, ducks live in it
   private nextId = 1;
   private evSeq = 0;
   private rescueTimer = 0;
@@ -147,16 +153,63 @@ export class World {
     }
   }
 
+  private makeDuck(): Duck {
+    // spawn somewhere inside the pond
+    const ang = this.rng.range(0, 6.28), rad = this.rng.range(0, this.pond.r * 0.7);
+    return {
+      id: this.nextId++, x: this.pond.x + Math.cos(ang) * rad, y: this.pond.y + Math.sin(ang) * rad,
+      vx: 0, vy: 0, heading: this.rng.range(0, 6.28), age: this.rng.range(0, 60), paddle: this.rng.range(0, 6.28),
+    };
+  }
+
+  // Ducks paddle only within the lagoon — the aquatic mirror of the shore rule.
+  private updateDucks(dt: number): void {
+    const P = this.pond;
+    for (let i = this.ducks.length - 1; i >= 0; i--) {
+      const d = this.ducks[i];
+      d.age += dt;
+      d.paddle += dt * 2.2;
+      if (d.age > DUCK_MAXAGE) { // ducks are mortal too
+        this.effects.push({ x: d.x, y: d.y, t: 0, life: 2.6, kind: 'soul', color: '#e9e7dc' });
+        this.ducks.splice(i, 1);
+        continue;
+      }
+      // gentle paddling wander
+      d.heading += this.rng.range(-0.9, 0.9) * dt;
+      const spd = DUCK_SPEED * (0.5 + 0.5 * Math.abs(Math.sin(d.age * 0.5)));
+      d.vx += (Math.cos(d.heading) * spd - d.vx) * Math.min(1, dt * 1.4);
+      d.vy += (Math.sin(d.heading) * spd - d.vy) * Math.min(1, dt * 1.4);
+      d.x += d.vx * dt; d.y += d.vy * dt;
+      // stay inside the pond: turn back at the shore
+      const ox = d.x - P.x, oy = d.y - P.y;
+      const od = Math.hypot(ox, oy);
+      const lim = P.r * 0.82;
+      if (od > lim) {
+        d.x = P.x + (ox / od) * lim; d.y = P.y + (oy / od) * lim;
+        d.heading = Math.atan2(P.y - d.y, P.x - d.x) + this.rng.range(-0.6, 0.6); // steer inward
+        d.vx *= 0.3; d.vy *= 0.3;
+      }
+    }
+    if (this.ducks.length < DUCK_MIN && P.r > 0) this.ducks.push(this.makeDuck());
+  }
+
   constructor(w: number, h: number, seed = 1) {
     this.w = w;
     this.h = h;
     this.rng = new RNG(seed);
     this.grass = new GrassField(w, h);
+    this.computePond();
+  }
+
+  // the lagoon is deterministic from the field size (matches the renderer exactly)
+  private computePond(): void {
+    this.pond = { x: this.w * 0.82, y: this.h * 0.8, r: this.w * 0.09 };
   }
 
   resize(w: number, h: number): void {
     this.w = w;
     this.h = h;
+    this.computePond();
     const g = new GrassField(w, h);
     g.seed(this.rng);
     this.grass = g;
@@ -171,6 +224,7 @@ export class World {
     this.corpses = [];
     this.eggs = [];
     this.scavengers = [];
+    this.ducks = [];
     this.grain = [];
     this.effects = [];
     this.events = [];
@@ -195,6 +249,7 @@ export class World {
     for (let i = 0; i < SCAV_MIN; i++) {
       this.scavengers.push(this.makeScavenger(this.rng.range(60, this.w - 60), this.rng.range(60, this.h - 60)));
     }
+    for (let i = 0; i < DUCK_MIN; i++) this.ducks.push(this.makeDuck());
   }
 
   private make(species: SpeciesId, x: number, y: number, genes?: Animal['genes']): Animal {
@@ -242,7 +297,7 @@ export class World {
     const grid = new SpatialGrid(this.w, this.h, 96);
     for (const a of this.animals) grid.insert(a);
 
-    const ctx: BehaviorCtx = { grid, grass: this.grass, grain: this.grain, rng: this.rng, dt, night, w: this.w, h: this.h, claimed: new Set<number>() };
+    const ctx: BehaviorCtx = { grid, grass: this.grass, grain: this.grain, rng: this.rng, dt, night, w: this.w, h: this.h, claimed: new Set<number>(), pond: this.pond };
 
     const newborns: Animal[] = [];
     const dead = new Set<number>();
@@ -391,6 +446,7 @@ export class World {
       }
     }
     this.updateScavengers(dt);
+    this.updateDucks(dt);
 
     // rescue effect — a farm shouldn't die out completely
     this.rescueTimer += dt;
@@ -513,6 +569,7 @@ export class World {
       corpses: this.corpses.map((c) => ({ ...c })),
       eggs: this.eggs.map((e) => ({ ...e, genes: { ...e.genes } })),
       scavengers: this.scavengers.map((s) => ({ ...s })),
+      ducks: this.ducks.map((d) => ({ ...d })),
       grain: this.grain.map((g) => ({ ...g })),
       grass: this.grass.toJSON(),
       events: this.events.map((e) => ({ ...e })),
@@ -522,6 +579,7 @@ export class World {
 
   load(s: WorldSnapshot): void {
     this.w = s.w; this.h = s.h;
+    this.computePond();
     this.rng.setState(s.rng);
     this.nextId = s.nextId;
     this.clock = s.clock; this.day = s.day; this.born = s.born; this.died = s.died;
@@ -531,6 +589,7 @@ export class World {
     this.corpses = (s.corpses ?? []).map((c) => ({ ...c }));
     this.eggs = (s.eggs ?? []).map((e) => ({ ...e, genes: { ...e.genes } }));
     this.scavengers = (s.scavengers ?? []).map((sc) => ({ ...sc }));
+    this.ducks = (s.ducks ?? []).map((d) => ({ ...d }));
     this.grain = s.grain.map((g) => ({ ...g }));
     this.grass.load(s.grass);
     this.events = (s.events ?? []).map((e) => ({ ...e }));

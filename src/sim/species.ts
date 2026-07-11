@@ -22,6 +22,7 @@ export interface SpeciesDef {
   fleesFrom: SpeciesId[]; // what it runs from
   catchEnergy: number; // energy gained per kill (carnivore)
   flocks?: boolean; // tends to gather in flocks when idle (boids)
+  home?: [number, number]; // preferred habitat centre (fraction of field w,h) — a gentle resting pull
 }
 
 export const SPECIES: Record<SpeciesId, SpeciesDef> = {
@@ -29,19 +30,19 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     id: 'chicken', label: 'Gallinas', emoji: '🐔', diet: 'herbivore', color: '#f4d35e',
     e0: 55, speed: 62, sense: 78, size: 6, metabolism: 2.8, moveCost: 0.03,
     grazeGain: 18, reproduceAt: 108, reproCost: 0.5, cooldown: 9, maxAge: 70, cap: 80,
-    preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true,
+    preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true, home: [0.56, 0.16],
   },
   sheep: {
     id: 'sheep', label: 'Ovejas', emoji: '🐑', diet: 'herbivore', color: '#eef0f2',
     e0: 90, speed: 46, sense: 84, size: 10, metabolism: 2.8, moveCost: 0.03,
     grazeGain: 28, reproduceAt: 135, reproCost: 0.5, cooldown: 13, maxAge: 100, cap: 46,
-    preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true,
+    preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true, home: [0.28, 0.62],
   },
   cow: {
     id: 'cow', label: 'Vacas', emoji: '🐄', diet: 'herbivore', color: '#d8dde1',
     e0: 150, speed: 34, sense: 76, size: 15, metabolism: 3.2, moveCost: 0.035,
     grazeGain: 36, reproduceAt: 250, reproCost: 0.5, cooldown: 22, maxAge: 135, cap: 24,
-    preys: [], fleesFrom: [], catchEnergy: 0,
+    preys: [], fleesFrom: [], catchEnergy: 0, home: [0.72, 0.48],
   },
   fox: {
     id: 'fox', label: 'Zorros', emoji: '🦊', diet: 'carnivore', color: '#e8712f',

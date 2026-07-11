@@ -41,46 +41,43 @@
 
 ---
 
-## Profundidad del ecosistema (pedidos recientes)
+## Profundidad del ecosistema (pedidos recientes) — ✅ hechos
 
 > Bloque de ciclo de vida más rico. Todos se apoyan en el núcleo `sim/` puro y
-> determinista, así que se validan headless con `sim:check`. Ordenados por
-> utilidad ÷ costo dentro del bloque.
+> determinista; se validaron headless con `sim:check` (8/8) y `snap:check`.
 
-- **E1. Crecer con la edad hasta la adultez** · S–M · *lo más visible por el costo*
-  Hoy el tamaño de render ya sale de `genes.size`; falta una **curva de
-  crecimiento por edad**: la cría nace pequeña y escala hasta un tamaño adulto a
-  cierta edad, y ahí se estabiliza. Se refleja solo en la escala del modelo y en
-  la Ficha (que ya muestra edad). Cambio chico, lectura enorme: se ve a los
-  animales *crecer*. Ojo con el balance (los caps y la reproducción no deberían
-  depender del tamaño instantáneo).
+- **E1. Crecer con la edad hasta la adultez** — ✅ hecho
+  La cría nace a la mitad del tamaño y crece (curva suave por edad) hasta el
+  tamaño adulto a ~28% de su vida, y ahí se estabiliza. Función pura
+  (`growthFactor`/`lifeStage`), solo render + Ficha (que ahora muestra
+  Cría/Joven/Adulto y % de tamaño). No toca la dinámica → balance intacto.
 
-- **E2. Gallinas ponen huevos con gestación** · M · *reproducción visible*
-  En vez de aparecer la cría de la nada, la gallina pone un **huevo** que
-  descansa en el suelo un tiempo de incubación (barrita/eclosión) y recién
-  entonces nace el pollito. Reusa el patrón que acabamos de hacer con los
-  *corpses* (una entidad no-animal con temporizador que se transforma). Se ve el
-  huevo en la simulación y en la Bitácora ("Huevo puesto" → "Nació").
+- **E2. Gallinas ponen huevos con gestación** — ✅ hecho
+  Las gallinas ponen un **huevo** (entidad `Egg`) que incuba 6s en el suelo y
+  luego eclosiona en un pollito. El huevo cuenta para el cap (población acotada)
+  y se ve en la escena (ovoide crema que se bambolea) y en la Bitácora
+  ("puso un huevo" → "nació").
 
-- **E3. Manadas / bandadas + puesta localizada** · M · *comportamiento emergente*
-  Las gallinas tienden a **agruparse** (boids: cohesión + separación + alineación
-  suave, dentro del steering ya existente) y ponen los huevos **dentro de su
-  zona de nido**, no en cualquier lado. Da grupos reconocibles y un "orden" que
-  el ojo lee como vida, no como ruido.
+- **E3. Manadas / bandadas + puesta localizada** — ✅ hecho
+  Gallinas y ovejas se **agrupan** con boids suaves (cohesión + separación +
+  alineación + wander), con espacio personal para no encimarse. Como el huevo se
+  pone en la posición de la gallina, cae dentro de la bandada.
 
-- **E4. Carroñeros aéreos + su propia mortalidad** · M–L · *cierra el ciclo de la muerte*
-  Un depredador aéreo (buitre/halcón) que **desciende a devorar los corpses**
-  antes de que suba el alma — extiende directamente el sistema de cuerpos recién
-  hecho. Estos carroñeros también **envejecen y mueren** (misma lógica de
-  energía/vejez). Convierte la muerte en nutrientes y suma una capa vertical al
-  cuadro.
+- **E4. Carroñeros aéreos + su propia mortalidad** — ✅ hecho
+  Buitres (`Scavenger`) que circulan alto y **descienden a devorar los corpses**
+  antes de que suba el alma (el cuerpo se vuelve nutriente, no hay alma). Los
+  cuerpos lejanos igual liberan su alma (se conserva el angelito). Envejecen y se
+  mueren de hambre/vejez → sueltan su propia alma; se reproducen con un mínimo
+  siempre en el cielo.
 
-- **E5. Micro-hábitats + agua para acuáticos** · L · *anti-loop estructural*
-  Zonas con carácter propio (pastura, bosque, orilla, roquedal) donde cada
-  especie tiene **preferencia de permanencia** (un campo de atracción por bioma
-  en el steering). Y reglas de terreno: p. ej. **solo animales acuáticos entran
-  a la laguna**, los terrestres la bordean. Es el mayor multiplicador de variedad
-  y encaja con "Biomas configurable" (#7) — conviene hacerlos juntos.
+- **E5. Micro-hábitats + agua para acuáticos** — ✅ hecho (núcleo)
+  Regla del agua: los terrestres **bordean la laguna** y nunca entran; los
+  **patos** (`Duck`) viven **solo** dentro del estanque. La laguna ahora la posee
+  el `sim` (coincide exacto con el agua visible). Además, afinidad de hábitat
+  suave: cada especie tiene un `home` y tiende a su zona cuando está ociosa.
+  *Pendiente (profundidad):* preferencia por biomas visibles (bosque/roquedal)
+  — requiere compartir posiciones de árboles/rocas entre render y `sim`; encaja
+  con "Biomas configurable" (#7).
 
 ---
 
@@ -174,6 +171,9 @@
 - Muerte en dos tiempos: el cuerpo queda **tumbado en gris** unos segundos de
   duelo y **luego** sube el alma (angelito) que se desvanece en el cielo.
 - Settings de **tamaño del terreno** y **densidad de población**.
+- Ciclo de vida (E1–E5): crecimiento por edad, huevos con gestación, bandadas,
+  buitres carroñeros mortales, regla del agua + patos acuáticos.
+- Depredadores reclaman presas distintas (no se enciman).
 - **Inspeccionar un ser con clic** → Ficha con energía, edad, genes e historia.
 - Modo galería / *zero-player* (tecla **G**).
 - Ritmo del ecosistema ajustable (0.5×–8×) desacoplado del reloj del cielo.

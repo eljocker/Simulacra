@@ -80,6 +80,7 @@ export interface WorldSnapshot {
   corpses: Corpse[];
   eggs: Egg[];
   scavengers: Scavenger[];
+  ducks: Duck[];
   grain: Grain[];
   grass: import('./grass.ts').GrassSnapshot;
   events: LifeEvent[];
@@ -119,6 +120,19 @@ export interface Scavenger {
   state: 'cruise' | 'dive' | 'feed';
   feedT: number; // seconds spent feeding on the current corpse
   flap: number; // wing-flap phase
+}
+
+// A duck — the lagoon's aquatic dweller. Paddles only within the pond and never
+// leaves the water (the mirror of the land animals' shore rule).
+export interface Duck {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  heading: number;
+  age: number;
+  paddle: number; // bob/paddle phase
 }
 
 export interface Effect {

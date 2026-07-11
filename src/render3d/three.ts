@@ -142,6 +142,7 @@ export class ThreeRenderer implements IRenderer {
   private dummy = new THREE.Object3D();
   private rain: THREE.Points;
   private eggMesh: THREE.InstancedMesh; // incubating chicken eggs
+  private duckMesh: THREE.InstancedMesh; // ducks floating on the pond
   private clouds: THREE.Sprite[] = [];
   private foliage: THREE.Object3D[] = []; // tree crowns, swayed by wind
   private angelTex = makeAngelTexture();
@@ -157,6 +158,7 @@ export class ThreeRenderer implements IRenderer {
   private readonly terOff = 137.2;
   private pondC = new THREE.Vector3();
   private pondR = 0;
+  private pondY = 0; // water surface height (ducks float here)
 
   // fixed isometric camera rig — no auto motion; user nudges with mouse/keys
   private az = Math.PI * 0.25;
@@ -244,6 +246,18 @@ export class ThreeRenderer implements IRenderer {
     this.eggMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.eggMesh.count = 0;
     this.scene.add(this.eggMesh);
+
+    // ducks: a tiny low-poly body + head + beak (only ever seen on the water)
+    const duckGeo = merge(
+      new THREE.SphereGeometry(0.5, 8, 6).scale(1.25, 0.72, 0.82), // body
+      new THREE.SphereGeometry(0.3, 8, 6).translate(0.55, 0.42, 0), // head
+      new THREE.ConeGeometry(0.1, 0.24, 5).rotateZ(-Math.PI / 2).translate(0.86, 0.36, 0), // beak
+    );
+    this.duckMesh = new THREE.InstancedMesh(duckGeo, new THREE.MeshStandardMaterial({ color: 0xf1eee4, flatShading: true, roughness: 0.8 }), 24);
+    this.duckMesh.frustumCulled = false;
+    this.duckMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.duckMesh.count = 0;
+    this.scene.add(this.duckMesh);
 
     // drifting procedural clouds (the brief's "anti-loop": the sky never repeats)
     const cloudTex = makeCloudTexture();
@@ -371,8 +385,9 @@ export class ThreeRenderer implements IRenderer {
     this.foliage = [];
     const gw = world.w * SC, gh = world.h * SC;
     this.terAmp = Math.min(2.6, Math.max(gw, gh) * 0.05);
-    this.pondC.set((world.w * 0.82 - world.w / 2) * SC, 0, (world.h * 0.8 - world.h / 2) * SC);
-    this.pondR = gw * 0.09;
+    // pond geometry comes from the sim now, so the water rule matches the visible water
+    this.pondC.set((world.pond.x - world.w / 2) * SC, 0, (world.pond.y - world.h / 2) * SC);
+    this.pondR = world.pond.r * SC;
 
     // ---- terrain relief: subdivided plane displaced by noise, coloured by height ----
     const segX = Math.max(8, Math.round(gw / 1.3));
@@ -416,7 +431,8 @@ export class ThreeRenderer implements IRenderer {
     // pond (sits in its carved basin)
     const pond = new THREE.Mesh(new THREE.CircleGeometry(this.pondR * 1.15, 28), new THREE.MeshStandardMaterial({ color: 0x4691b6, roughness: 0.2, metalness: 0.15 }));
     pond.rotation.x = -Math.PI / 2;
-    pond.position.set(this.pondC.x, this.terrainY(this.pondC.x, this.pondC.z) + 0.3, this.pondC.z);
+    this.pondY = this.terrainY(this.pondC.x, this.pondC.z) + 0.3; // water surface height — ducks float here
+    pond.position.set(this.pondC.x, this.pondY, this.pondC.z);
     this.scenery.add(pond);
 
     // trees — deterministic scatter (no RNG); crowns collected for wind sway
@@ -540,6 +556,22 @@ export class ThreeRenderer implements IRenderer {
     }
     this.eggMesh.count = ei;
     this.eggMesh.instanceMatrix.needsUpdate = true;
+
+    // ducks — float on the water surface with a gentle bob
+    let di = 0;
+    for (const d of world.ducks) {
+      if (di >= 24) break;
+      const sx = (d.x - world.w / 2) * SC, sz = (d.y - world.h / 2) * SC;
+      const bob = Math.sin(d.paddle) * 0.05;
+      this.dummy.position.set(sx, this.pondY + 0.16 + bob, sz);
+      this.dummy.rotation.set(0, -d.heading, 0);
+      this.dummy.scale.setScalar(0.62);
+      this.dummy.updateMatrix();
+      this.duckMesh.setMatrixAt(di, this.dummy.matrix);
+      di++;
+    }
+    this.duckMesh.count = di;
+    this.duckMesh.instanceMatrix.needsUpdate = true;
 
     // day / night
     const n = nightFactor(world.clock);
