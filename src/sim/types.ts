@@ -77,6 +77,7 @@ export interface WorldSnapshot {
   weather: Weather;
   weatherTimer: number;
   animals: Animal[];
+  corpses: Corpse[];
   grain: Grain[];
   grass: import('./grass.ts').GrassSnapshot;
   events: LifeEvent[];
@@ -95,5 +96,20 @@ export interface Effect {
   t: number;
   life: number;
   kind: 'birth' | 'death' | 'meteor' | 'heart' | 'soul';
+  color: string;
+}
+
+// A fallen animal lying on the ground: it rests here (rendered grey) for a few
+// seconds of mourning before its soul rises. Kept apart from `animals` so it
+// never counts toward population, caps, predation or stats.
+export interface Corpse {
+  species: SpeciesId;
+  x: number;
+  y: number;
+  heading: number;
+  size: number; // genes.size at death — for render scale
+  born: number; // grow value at death (≈1 for adults)
+  t: number; // elapsed seconds lying down
+  life: number; // how long it lies before the soul rises
   color: string;
 }

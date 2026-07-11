@@ -41,6 +41,49 @@
 
 ---
 
+## Profundidad del ecosistema (pedidos recientes)
+
+> Bloque de ciclo de vida más rico. Todos se apoyan en el núcleo `sim/` puro y
+> determinista, así que se validan headless con `sim:check`. Ordenados por
+> utilidad ÷ costo dentro del bloque.
+
+- **E1. Crecer con la edad hasta la adultez** · S–M · *lo más visible por el costo*
+  Hoy el tamaño de render ya sale de `genes.size`; falta una **curva de
+  crecimiento por edad**: la cría nace pequeña y escala hasta un tamaño adulto a
+  cierta edad, y ahí se estabiliza. Se refleja solo en la escala del modelo y en
+  la Ficha (que ya muestra edad). Cambio chico, lectura enorme: se ve a los
+  animales *crecer*. Ojo con el balance (los caps y la reproducción no deberían
+  depender del tamaño instantáneo).
+
+- **E2. Gallinas ponen huevos con gestación** · M · *reproducción visible*
+  En vez de aparecer la cría de la nada, la gallina pone un **huevo** que
+  descansa en el suelo un tiempo de incubación (barrita/eclosión) y recién
+  entonces nace el pollito. Reusa el patrón que acabamos de hacer con los
+  *corpses* (una entidad no-animal con temporizador que se transforma). Se ve el
+  huevo en la simulación y en la Bitácora ("Huevo puesto" → "Nació").
+
+- **E3. Manadas / bandadas + puesta localizada** · M · *comportamiento emergente*
+  Las gallinas tienden a **agruparse** (boids: cohesión + separación + alineación
+  suave, dentro del steering ya existente) y ponen los huevos **dentro de su
+  zona de nido**, no en cualquier lado. Da grupos reconocibles y un "orden" que
+  el ojo lee como vida, no como ruido.
+
+- **E4. Carroñeros aéreos + su propia mortalidad** · M–L · *cierra el ciclo de la muerte*
+  Un depredador aéreo (buitre/halcón) que **desciende a devorar los corpses**
+  antes de que suba el alma — extiende directamente el sistema de cuerpos recién
+  hecho. Estos carroñeros también **envejecen y mueren** (misma lógica de
+  energía/vejez). Convierte la muerte en nutrientes y suma una capa vertical al
+  cuadro.
+
+- **E5. Micro-hábitats + agua para acuáticos** · L · *anti-loop estructural*
+  Zonas con carácter propio (pastura, bosque, orilla, roquedal) donde cada
+  especie tiene **preferencia de permanencia** (un campo de atracción por bioma
+  en el steering). Y reglas de terreno: p. ej. **solo animales acuáticos entran
+  a la laguna**, los terrestres la bordean. Es el mayor multiplicador de variedad
+  y encaja con "Biomas configurable" (#7) — conviene hacerlos juntos.
+
+---
+
 ## Nivel 1 — Alta utilidad, costo medio
 
 5. **Cámara "sigue a un ser"** · M · *contemplación dirigida*
@@ -128,7 +171,8 @@
 - Persistencia IndexedDB: autosave + snapshots con nombre, serialización
   bit-exacta (incluye RNG y pasto a full precisión).
 - Bitácora de eventos (nacimientos/muertes con causa).
-- Muerte como animación (angelito/alma que se eleva y se desvanece).
+- Muerte en dos tiempos: el cuerpo queda **tumbado en gris** unos segundos de
+  duelo y **luego** sube el alma (angelito) que se desvanece en el cielo.
 - Settings de **tamaño del terreno** y **densidad de población**.
 - **Inspeccionar un ser con clic** → Ficha con energía, edad, genes e historia.
 - Modo galería / *zero-player* (tecla **G**).

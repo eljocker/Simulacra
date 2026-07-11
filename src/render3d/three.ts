@@ -7,6 +7,8 @@ import { fbm } from './noise.ts';
 
 const SC = 0.06; // world px -> scene units
 const MAX_INST = 280;
+const MAX_CORPSE = 160;
+const CORPSE_COLOR = 0x6b665f; // ashen, lifeless grey (darker than the bluish rocks)
 
 // ---- low-poly geometry per species (merged so it can be instanced: one draw
 // ---- call per species). Parts are non-indexed so mixing indexed and
@@ -116,7 +118,9 @@ export class ThreeRenderer implements IRenderer {
   private ground: THREE.Mesh;
   private scenery = new THREE.Group();
   private meshes = {} as Record<SpeciesId, THREE.InstancedMesh>;
+  private corpseMeshes = {} as Record<SpeciesId, THREE.InstancedMesh>; // grey fallen bodies
   private foot = {} as Record<SpeciesId, number>; // -min.y of each model: how high to sit it so its feet rest on the ground
+  private lieHalf = {} as Record<SpeciesId, number>; // resting height once tipped on its side
   private dummy = new THREE.Object3D();
   private rain: THREE.Points;
   private clouds: THREE.Sprite[] = [];
@@ -181,9 +185,21 @@ export class ThreeRenderer implements IRenderer {
       im.count = 0;
       im.geometry.computeBoundingBox();
       im.geometry.computeBoundingSphere(); // needed for raycasting the instances
-      this.foot[sp] = -(im.geometry.boundingBox?.min.y ?? 0); // grounding offset
+      const bb = im.geometry.boundingBox;
+      this.foot[sp] = -(bb?.min.y ?? 0); // grounding offset (standing)
+      // once tipped 90° on its side, local +X becomes the vertical axis
+      this.lieHalf[sp] = Math.max(Math.abs(bb?.min.x ?? 0.4), Math.abs(bb?.max.x ?? 0.4));
       this.meshes[sp] = im;
       this.scene.add(im);
+
+      // a parallel grey instanced mesh for the fallen bodies of this species
+      const cmat = new THREE.MeshStandardMaterial({ color: CORPSE_COLOR, flatShading: true, roughness: 1 });
+      const cm = new THREE.InstancedMesh(GEO[sp](), cmat, MAX_CORPSE);
+      cm.frustumCulled = false;
+      cm.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      cm.count = 0;
+      this.corpseMeshes[sp] = cm;
+      this.scene.add(cm);
     });
 
     const rainGeo = new THREE.BufferGeometry();
@@ -454,6 +470,28 @@ export class ThreeRenderer implements IRenderer {
       const im = this.meshes[sp];
       im.count = counts[sp];
       im.instanceMatrix.needsUpdate = true;
+    });
+
+    // fallen bodies — tipped on their side, grey, resting on the terrain
+    const cc: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0 };
+    for (const c of world.corpses) {
+      const cm = this.corpseMeshes[c.species];
+      const i = cc[c.species];
+      if (i >= MAX_CORPSE) continue;
+      const s = c.size * Math.max(c.born, 0.5) * 0.085;
+      const sx = (c.x - world.w / 2) * SC, sz = (c.y - world.h / 2) * SC;
+      const k = c.t / c.life; // 0..1 — settle a touch as it lies
+      this.dummy.position.set(sx, this.terrainY(sx, sz) + this.lieHalf[c.species] * s * (1 - k * 0.25), sz);
+      this.dummy.rotation.set(0, -c.heading, Math.PI * 0.5); // tip over
+      this.dummy.scale.setScalar(s);
+      this.dummy.updateMatrix();
+      cm.setMatrixAt(i, this.dummy.matrix);
+      cc[c.species] = i + 1;
+    }
+    (Object.keys(this.corpseMeshes) as SpeciesId[]).forEach((sp) => {
+      const cm = this.corpseMeshes[sp];
+      cm.count = cc[sp];
+      cm.instanceMatrix.needsUpdate = true;
     });
 
     // day / night

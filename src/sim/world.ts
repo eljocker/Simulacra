@@ -1,4 +1,4 @@
-import type { Animal, Effect, Grain, Intervention, LifeEvent, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
+import type { Animal, Corpse, Effect, Grain, Intervention, LifeEvent, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
 import { SPECIES, HERBIVORES } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
@@ -6,12 +6,14 @@ import { GrassField } from './grass.ts';
 import { steer, type BehaviorCtx } from './behavior.ts';
 
 const EVENT_CAP = 300;
+const CORPSE_TIME = 3.6; // seconds a body lies on the ground before its soul rises
 
 export class World {
   w: number;
   h: number;
   rng: RNG;
   animals: Animal[] = [];
+  corpses: Corpse[] = [];
   grass: GrassField;
   grain: Grain[] = [];
   effects: Effect[] = [];
@@ -30,6 +32,14 @@ export class World {
   private logEvent(e: Omit<LifeEvent, 'seq' | 'clock'>): void {
     this.events.push({ seq: this.evSeq++, clock: this.clock, ...e });
     if (this.events.length > EVENT_CAP) this.events.shift();
+  }
+
+  // lay a fallen animal on the ground; its soul rises once CORPSE_TIME elapses
+  private layCorpse(a: Animal): void {
+    this.corpses.push({
+      species: a.species, x: a.x, y: a.y, heading: a.heading,
+      size: a.genes.size, born: a.born, t: 0, life: CORPSE_TIME, color: SPECIES[a.species].color,
+    });
   }
 
   constructor(w: number, h: number, seed = 1) {
@@ -53,6 +63,7 @@ export class World {
 
   seed(): void {
     this.animals = [];
+    this.corpses = [];
     this.grain = [];
     this.effects = [];
     this.events = [];
@@ -191,7 +202,7 @@ export class World {
           this.died++;
           a.energy += def.catchEnergy;
           a.flash = 0.3;
-          this.effects.push({ x: prey.x, y: prey.y, t: 0, life: 2.6, kind: 'soul', color: SPECIES[prey.species].color });
+          this.layCorpse(prey);
           this.logEvent({ kind: 'death', species: prey.species, id: prey.id, cause: 'cazado', by: a.id, age: prey.age });
         }
       }
@@ -217,7 +228,7 @@ export class World {
         this.died++;
         const cause = a.age > def.maxAge ? 'vejez' : a.sick > 0 ? 'peste' : 'hambre';
         this.logEvent({ kind: 'death', species: a.species, id: a.id, cause, age: a.age });
-        this.effects.push({ x: a.x, y: a.y, t: 0, life: 2.6, kind: 'soul', color: def.color });
+        this.layCorpse(a);
       }
     }
 
@@ -233,6 +244,15 @@ export class World {
     for (let i = this.effects.length - 1; i >= 0; i--) {
       this.effects[i].t += dt;
       if (this.effects[i].t >= this.effects[i].life) this.effects.splice(i, 1);
+    }
+    // fallen bodies rest a while, then release a rising soul
+    for (let i = this.corpses.length - 1; i >= 0; i--) {
+      const c = this.corpses[i];
+      c.t += dt;
+      if (c.t >= c.life) {
+        this.effects.push({ x: c.x, y: c.y, t: 0, life: 2.6, kind: 'soul', color: c.color });
+        this.corpses.splice(i, 1);
+      }
     }
 
     // rescue effect — a farm shouldn't die out completely
@@ -306,7 +326,7 @@ export class World {
           if ((a.x - mx) ** 2 + (a.y - my) ** 2 < R * R) {
             this.died++;
             this.logEvent({ kind: 'death', species: a.species, id: a.id, cause: 'meteorito', age: a.age });
-            this.effects.push({ x: a.x, y: a.y, t: 0, life: 2.6, kind: 'soul', color: SPECIES[a.species].color });
+            this.layCorpse(a);
           } else survivors.push(a);
         }
         this.animals = survivors;
@@ -353,6 +373,7 @@ export class World {
       capScale: this.capScale,
       weather: this.weather, weatherTimer: this.weatherTimer,
       animals: this.animals.map((a) => ({ ...a, genes: { ...a.genes } })),
+      corpses: this.corpses.map((c) => ({ ...c })),
       grain: this.grain.map((g) => ({ ...g })),
       grass: this.grass.toJSON(),
       events: this.events.map((e) => ({ ...e })),
@@ -368,6 +389,7 @@ export class World {
     this.capScale = s.capScale ?? 1;
     this.weather = s.weather; this.weatherTimer = s.weatherTimer;
     this.animals = s.animals.map((a) => ({ ...a, genes: { ...a.genes } }));
+    this.corpses = (s.corpses ?? []).map((c) => ({ ...c }));
     this.grain = s.grain.map((g) => ({ ...g }));
     this.grass.load(s.grass);
     this.events = (s.events ?? []).map((e) => ({ ...e }));
