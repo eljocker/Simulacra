@@ -34,8 +34,11 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build (2D app + 3D prototype)
+        run: |
+          npm run build
+          npm run build:3d
+          cp dist3d/three.html dist/three.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

@@ -1,7 +1,11 @@
 import { World } from '../sim/world.ts';
 import type { Intervention } from '../sim/types.ts';
 import { Renderer } from '../render/renderer.ts';
+import type { IRenderer } from '../render/IRenderer.ts';
 import { Store, type HistoryPoint, type Tool } from './store.ts';
+
+export type RendererFactory = (canvas: HTMLCanvasElement) => IRenderer;
+const default2D: RendererFactory = (c) => new Renderer(c);
 
 const FIXED = 1 / 60;
 const HISTORY_MAX = 200;
@@ -10,7 +14,7 @@ const HISTORY_MAX = 200;
 // Publishes lightweight stats to the Store for React to read.
 export class Engine {
   world: World;
-  renderer: Renderer;
+  renderer: IRenderer;
   store = new Store();
   private running = true;
   private speed = 1;
@@ -21,11 +25,11 @@ export class Engine {
   private histAcc = 0;
   private history: HistoryPoint[] = [];
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement, makeRenderer: RendererFactory = default2D) {
     const { w, h } = this.canvasSize();
     this.world = new World(w, h, (Math.random() * 1e9) | 0);
     this.world.seed();
-    this.renderer = new Renderer(canvas);
+    this.renderer = makeRenderer(canvas);
     this.renderer.resize(w, h);
   }
 

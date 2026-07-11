@@ -1,16 +1,16 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { Engine } from '../engine/loop.ts';
+import { Engine, type RendererFactory } from '../engine/loop.ts';
 import { HUD } from './HUD.tsx';
 import { GodPanel } from './GodPanel.tsx';
 
-export function App() {
+export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [engine, setEngine] = useState<Engine | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const eng = new Engine(canvas);
+    const eng = new Engine(canvas, makeRenderer);
     eng.start();
     setEngine(eng);
 

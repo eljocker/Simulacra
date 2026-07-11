@@ -12,6 +12,17 @@ peste, suelta un zorro o arrasa un rincón con un meteorito.
 - [`docs/BRIEF.md`](docs/BRIEF.md) — documento de concepto y requerimientos (la visión).
 - [`docs/GUIA-DESARROLLO.md`](docs/GUIA-DESARROLLO.md) — guía de desarrollo: cómo el
   código actual mapea a esa visión y los próximos pasos.
+- [`docs/PLAN-3D.md`](docs/PLAN-3D.md) — evaluación del salto a 3D (con prototipo
+  Three.js funcionando en `/three.html`).
+
+## Prototipo 3D
+
+Hay un renderer 3D (Three.js) que corre **el mismo motor de simulación** — solo se
+cambia el renderer inyectado. En vivo: **https://eljocker.github.io/Simulacra/three.html**
+
+```bash
+npm run build:3d    # bundle único en dist3d/three.html
+```
 
 ## Stack
 
