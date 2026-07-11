@@ -78,6 +78,7 @@ export interface WorldSnapshot {
   weatherTimer: number;
   animals: Animal[];
   corpses: Corpse[];
+  eggs: Egg[];
   grain: Grain[];
   grass: import('./grass.ts').GrassSnapshot;
   events: LifeEvent[];
@@ -88,6 +89,18 @@ export interface Grain {
   x: number;
   y: number;
   amount: number;
+}
+
+// A chicken egg incubating on the ground before it hatches into a chick.
+// Counts toward the chicken cap while it waits, so the population stays bounded.
+export interface Egg {
+  x: number;
+  y: number;
+  genes: Genes; // inherited by the chick that hatches
+  parent: number;
+  t: number; // incubation elapsed (s)
+  life: number; // gestation time (s)
+  wobble: number; // phase for the pre-hatch wobble
 }
 
 export interface Effect {
@@ -109,6 +122,7 @@ export interface Corpse {
   heading: number;
   size: number; // genes.size at death — for render scale
   born: number; // grow value at death (≈1 for adults)
+  age: number; // age at death — for growth-scaled render
   t: number; // elapsed seconds lying down
   life: number; // how long it lies before the soul rises
   color: string;

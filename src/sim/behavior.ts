@@ -40,6 +40,41 @@ function roam(a: Animal, spd: number, dt: number, rng: RNG): void {
   a.vy += (desiredY - a.vy) * k;
 }
 
+// Gentle boids flock: cohere toward nearby same-species neighbours, keep a little
+// personal space, and loosely align — blended with a soft wander so the group
+// drifts as a calm cluster (this is what makes eggs end up laid within the flock).
+function flock(a: Animal, spd: number, ctx: BehaviorCtx): void {
+  const R = a.genes.sense * 0.8;
+  let cx = 0, cy = 0, sx = 0, sy = 0, hx = 0, hy = 0, n = 0;
+  const near = a.genes.size * 2.6;
+  ctx.grid.forEachNear(a.x, a.y, R, (o) => o.species === a.species, a, (o, d2) => {
+    cx += o.x; cy += o.y;
+    hx += Math.cos(o.heading); hy += Math.sin(o.heading);
+    const dist = Math.sqrt(d2) || 1;
+    if (dist < near) { sx += (a.x - o.x) / dist; sy += (a.y - o.y) / dist; } // separation
+    n++;
+  });
+  // wander is always consumed (one RNG draw per idle steer, flocking or not)
+  a.wander += ctx.rng.range(-1.1, 1.1) * ctx.dt;
+  const wx = Math.cos(a.wander), wy = Math.sin(a.wander);
+  if (n === 0) { // alone → plain roam
+    const k = Math.min(1, ctx.dt * 1.1);
+    a.vx += (wx * spd * 0.42 - a.vx) * k;
+    a.vy += (wy * spd * 0.42 - a.vy) * k;
+    return;
+  }
+  let dxv = wx * 0.5 + sx * 1.15, dyv = wy * 0.5 + sy * 1.15; // wander + separation
+  const coh = Math.hypot(cx / n - a.x, cy / n - a.y) || 1;    // cohesion (toward centre)
+  dxv += ((cx / n - a.x) / coh) * 0.6; dyv += ((cy / n - a.y) / coh) * 0.6;
+  const al = Math.hypot(hx, hy) || 1;                          // alignment
+  dxv += (hx / al) * 0.25; dyv += (hy / al) * 0.25;
+  const dl = Math.hypot(dxv, dyv) || 1;
+  const s = spd * 0.42;
+  const k = Math.min(1, ctx.dt * 1.1);
+  a.vx += ((dxv / dl) * s - a.vx) * k;
+  a.vy += ((dyv / dl) * s - a.vy) * k;
+}
+
 // Decide this animal's velocity for the frame. Returns nothing; world integrates.
 export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   const nightSlow = 1 - 0.45 * ctx.night;
@@ -82,7 +117,9 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
       return;
     }
   }
-  roam(a, spd, ctx.dt, ctx.rng);
+  // nothing urgent → flock (if the species gathers) or wander alone
+  if (def.flocks) flock(a, spd, ctx);
+  else roam(a, spd, ctx.dt, ctx.rng);
 }
 
 export function speciesOf(a: Animal): SpeciesDef {

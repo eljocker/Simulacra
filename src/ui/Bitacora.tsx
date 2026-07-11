@@ -25,6 +25,7 @@ function describe(e: LifeEvent): { icon: string; main: string; sub: string; tone
   }
   const sp = e.species ? SP[e.species] : { n: 'Ser', e: '•' };
   if (e.kind === 'birth') {
+    if (e.cause === 'huevo') return { icon: '🥚', main: `${sp.n} #${e.id}`, sub: 'puso un huevo', tone: 'birth' };
     const sub = e.cause === 'llegada' ? 'llegó de los bosques'
       : e.cause === 'divino' ? 'invocada por ti'
       : e.parent ? `nació · cría de #${e.parent}` : 'nació';

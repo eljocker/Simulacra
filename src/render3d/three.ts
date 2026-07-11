@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { World } from '../sim/world.ts';
 import type { Effect, SpeciesId } from '../sim/types.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
+import { growthFactor } from '../sim/species.ts';
 import { fbm } from './noise.ts';
 
 const SC = 0.06; // world px -> scene units
@@ -123,6 +124,7 @@ export class ThreeRenderer implements IRenderer {
   private lieHalf = {} as Record<SpeciesId, number>; // resting height once tipped on its side
   private dummy = new THREE.Object3D();
   private rain: THREE.Points;
+  private eggMesh: THREE.InstancedMesh; // incubating chicken eggs
   private clouds: THREE.Sprite[] = [];
   private foliage: THREE.Object3D[] = []; // tree crowns, swayed by wind
   private angelTex = makeAngelTexture();
@@ -215,6 +217,14 @@ export class ThreeRenderer implements IRenderer {
     this.rain.frustumCulled = false;
     this.rain.visible = false;
     this.scene.add(this.rain);
+
+    // incubating eggs: a small cream ovoid, instanced
+    const eggGeo = new THREE.SphereGeometry(0.5, 8, 6);
+    this.eggMesh = new THREE.InstancedMesh(eggGeo, new THREE.MeshStandardMaterial({ color: 0xf3ecd8, flatShading: true, roughness: 0.7 }), 160);
+    this.eggMesh.frustumCulled = false;
+    this.eggMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.eggMesh.count = 0;
+    this.scene.add(this.eggMesh);
 
     // drifting procedural clouds (the brief's "anti-loop": the sky never repeats)
     const cloudTex = makeCloudTexture();
@@ -454,7 +464,7 @@ export class ThreeRenderer implements IRenderer {
       const im = this.meshes[a.species];
       const i = counts[a.species];
       if (i >= MAX_INST) continue;
-      const s = a.genes.size * a.born * 0.085;
+      const s = a.genes.size * growthFactor(a.species, a.age) * a.born * 0.085;
       // gravity rule: feet rest on the terrain surface at the animal's position,
       // so no animal can ever float or sink — even over hills.
       const sx = (a.x - world.w / 2) * SC, sz = (a.y - world.h / 2) * SC;
@@ -478,7 +488,7 @@ export class ThreeRenderer implements IRenderer {
       const cm = this.corpseMeshes[c.species];
       const i = cc[c.species];
       if (i >= MAX_CORPSE) continue;
-      const s = c.size * Math.max(c.born, 0.5) * 0.085;
+      const s = c.size * growthFactor(c.species, c.age) * Math.max(c.born, 0.5) * 0.085;
       const sx = (c.x - world.w / 2) * SC, sz = (c.y - world.h / 2) * SC;
       const k = c.t / c.life; // 0..1 — settle a touch as it lies
       this.dummy.position.set(sx, this.terrainY(sx, sz) + this.lieHalf[c.species] * s * (1 - k * 0.25), sz);
@@ -493,6 +503,24 @@ export class ThreeRenderer implements IRenderer {
       cm.count = cc[sp];
       cm.instanceMatrix.needsUpdate = true;
     });
+
+    // incubating eggs — small ovoids that wobble a little more as hatching nears
+    let ei = 0;
+    for (const eg of world.eggs) {
+      if (ei >= 160) break;
+      const sx = (eg.x - world.w / 2) * SC, sz = (eg.y - world.h / 2) * SC;
+      const es = 1.05;
+      const k = eg.t / eg.life; // 0..1
+      const wob = Math.sin(this.t * 0.22 + eg.wobble) * 0.12 * k; // gentle rocking that grows
+      this.dummy.position.set(sx, this.terrainY(sx, sz) + 0.42 * es, sz);
+      this.dummy.rotation.set(wob, eg.wobble, wob * 0.6);
+      this.dummy.scale.set(0.42 * es, 0.56 * es, 0.42 * es); // taller than wide → egg shape
+      this.dummy.updateMatrix();
+      this.eggMesh.setMatrixAt(ei, this.dummy.matrix);
+      ei++;
+    }
+    this.eggMesh.count = ei;
+    this.eggMesh.instanceMatrix.needsUpdate = true;
 
     // day / night
     const n = nightFactor(world.clock);

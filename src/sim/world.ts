@@ -1,4 +1,4 @@
-import type { Animal, Corpse, Effect, Grain, Intervention, LifeEvent, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
+import type { Animal, Corpse, Effect, Egg, Grain, Intervention, LifeEvent, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
 import { SPECIES, HERBIVORES } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
@@ -7,6 +7,7 @@ import { steer, type BehaviorCtx } from './behavior.ts';
 
 const EVENT_CAP = 300;
 const CORPSE_TIME = 3.6; // seconds a body lies on the ground before its soul rises
+const GESTATION = 6; // seconds a chicken egg incubates before it hatches
 
 export class World {
   w: number;
@@ -14,6 +15,7 @@ export class World {
   rng: RNG;
   animals: Animal[] = [];
   corpses: Corpse[] = [];
+  eggs: Egg[] = [];
   grass: GrassField;
   grain: Grain[] = [];
   effects: Effect[] = [];
@@ -38,7 +40,7 @@ export class World {
   private layCorpse(a: Animal): void {
     this.corpses.push({
       species: a.species, x: a.x, y: a.y, heading: a.heading,
-      size: a.genes.size, born: a.born, t: 0, life: CORPSE_TIME, color: SPECIES[a.species].color,
+      size: a.genes.size, born: a.born, age: a.age, t: 0, life: CORPSE_TIME, color: SPECIES[a.species].color,
     });
   }
 
@@ -64,6 +66,7 @@ export class World {
   seed(): void {
     this.animals = [];
     this.corpses = [];
+    this.eggs = [];
     this.grain = [];
     this.effects = [];
     this.events = [];
@@ -141,6 +144,7 @@ export class World {
     // can't be overshot by many simultaneous births in one step
     const pop: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0 };
     for (const a of this.animals) pop[a.species]++;
+    pop.chicken += this.eggs.length; // eggs reserve a slot so the cap can't be overshot
 
     for (const a of this.animals) {
       if (dead.has(a.id)) continue;
@@ -212,13 +216,24 @@ export class World {
       if (a.energy > def.reproduceAt && a.cooldown <= 0 && a.age > def.maxAge * 0.1 && pop[a.species] < def.cap * this.capScale) {
         a.energy *= def.reproCost;
         a.cooldown = def.cooldown;
-        const child = this.make(a.species, a.x + this.rng.range(-10, 10), a.y + this.rng.range(-10, 10), this.childGenes(a));
-        child.energy = def.e0 * 0.7;
-        newborns.push(child);
-        pop[a.species]++;
-        this.born++;
-        this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.6, kind: 'heart', color: '#ff77aa' });
-        this.logEvent({ kind: 'birth', species: a.species, id: child.id, parent: a.id });
+        if (a.species === 'chicken') {
+          // hens lay an egg that incubates before hatching (see hatchEggs)
+          this.eggs.push({
+            x: a.x + this.rng.range(-8, 8), y: a.y + this.rng.range(-8, 8),
+            genes: this.childGenes(a), parent: a.id, t: 0, life: GESTATION, wobble: this.rng.range(0, 6.28),
+          });
+          pop.chicken++;
+          this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.6, kind: 'heart', color: '#ffd166' });
+          this.logEvent({ kind: 'birth', species: 'chicken', id: a.id, cause: 'huevo', parent: a.id });
+        } else {
+          const child = this.make(a.species, a.x + this.rng.range(-10, 10), a.y + this.rng.range(-10, 10), this.childGenes(a));
+          child.energy = def.e0 * 0.7;
+          newborns.push(child);
+          pop[a.species]++;
+          this.born++;
+          this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.6, kind: 'heart', color: '#ff77aa' });
+          this.logEvent({ kind: 'birth', species: a.species, id: child.id, parent: a.id });
+        }
       }
 
       // death (natural: starvation, illness or old age)
@@ -252,6 +267,20 @@ export class World {
       if (c.t >= c.life) {
         this.effects.push({ x: c.x, y: c.y, t: 0, life: 2.6, kind: 'soul', color: c.color });
         this.corpses.splice(i, 1);
+      }
+    }
+    // eggs incubate on the ground, then hatch into a chick
+    for (let i = this.eggs.length - 1; i >= 0; i--) {
+      const eg = this.eggs[i];
+      eg.t += dt;
+      if (eg.t >= eg.life) {
+        const chick = this.make('chicken', eg.x, eg.y, eg.genes);
+        chick.energy = SPECIES.chicken.e0 * 0.7;
+        this.animals.push(chick);
+        this.born++;
+        this.effects.push({ x: eg.x, y: eg.y, t: 0, life: 0.6, kind: 'birth', color: SPECIES.chicken.color });
+        this.logEvent({ kind: 'birth', species: 'chicken', id: chick.id, parent: eg.parent });
+        this.eggs.splice(i, 1);
       }
     }
 
@@ -374,6 +403,7 @@ export class World {
       weather: this.weather, weatherTimer: this.weatherTimer,
       animals: this.animals.map((a) => ({ ...a, genes: { ...a.genes } })),
       corpses: this.corpses.map((c) => ({ ...c })),
+      eggs: this.eggs.map((e) => ({ ...e, genes: { ...e.genes } })),
       grain: this.grain.map((g) => ({ ...g })),
       grass: this.grass.toJSON(),
       events: this.events.map((e) => ({ ...e })),
@@ -390,6 +420,7 @@ export class World {
     this.weather = s.weather; this.weatherTimer = s.weatherTimer;
     this.animals = s.animals.map((a) => ({ ...a, genes: { ...a.genes } }));
     this.corpses = (s.corpses ?? []).map((c) => ({ ...c }));
+    this.eggs = (s.eggs ?? []).map((e) => ({ ...e, genes: { ...e.genes } }));
     this.grain = s.grain.map((g) => ({ ...g }));
     this.grass.load(s.grass);
     this.events = (s.events ?? []).map((e) => ({ ...e }));

@@ -1,6 +1,7 @@
 import type { Engine } from '../engine/loop.ts';
 import type { LifeEvent, SpeciesId } from '../sim/types.ts';
 import type { SelectedInfo } from '../engine/store.ts';
+import { growthFactor, lifeStage } from '../sim/species.ts';
 
 const SP: Record<SpeciesId, { n: string; e: string; diet: string }> = {
   chicken: { n: 'Gallina', e: '🐔', diet: 'Herbívora · pica pasto' },
@@ -17,6 +18,7 @@ function hhmm(f: number): string {
 // A one-line story for each event in this creature's timeline.
 function line(e: LifeEvent): { ic: string; txt: string; tone: string } {
   if (e.kind === 'birth') {
+    if (e.cause === 'huevo') return { ic: '🥚', txt: 'Puso un huevo', tone: 'birth' };
     const t = e.cause === 'llegada' ? 'Llegó de los bosques'
       : e.cause === 'divino' ? 'Invocada por ti'
       : e.parent ? `Nació · cría de #${e.parent}` : 'Nació';
@@ -67,9 +69,17 @@ export function Ficha({ engine, selected, events }: { engine: Engine; selected: 
       {selected.alive && (
         <div className="fk-stats">
           <Bar label="Energía" v={selected.energy ?? 0} max={100} color="var(--grass)" />
-          <div className="fk-meta">
-            <span>⏳ Edad <b>{Math.round(selected.age ?? 0)}s</b></span>
-          </div>
+          {(() => {
+            const age = selected.age ?? 0;
+            const stage = lifeStage(selected.species, age);
+            const pct = Math.round(growthFactor(selected.species, age) * 100);
+            return (
+              <div className="fk-meta">
+                <span>⏳ Edad <b>{Math.round(age)}s</b></span>
+                <span>{stage.emoji} {stage.label} <b>{pct}%</b></span>
+              </div>
+            );
+          })()}
           {selected.genes && (
             <div className="fk-genes">
               <span className="fk-gt">Genes</span>

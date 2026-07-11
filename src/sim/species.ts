@@ -21,6 +21,7 @@ export interface SpeciesDef {
   preys: SpeciesId[]; // what it hunts (carnivore)
   fleesFrom: SpeciesId[]; // what it runs from
   catchEnergy: number; // energy gained per kill (carnivore)
+  flocks?: boolean; // tends to gather in flocks when idle (boids)
 }
 
 export const SPECIES: Record<SpeciesId, SpeciesDef> = {
@@ -28,13 +29,13 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     id: 'chicken', label: 'Gallinas', emoji: '🐔', diet: 'herbivore', color: '#f4d35e',
     e0: 55, speed: 62, sense: 78, size: 6, metabolism: 2.8, moveCost: 0.03,
     grazeGain: 18, reproduceAt: 108, reproCost: 0.5, cooldown: 9, maxAge: 70, cap: 80,
-    preys: [], fleesFrom: ['fox'], catchEnergy: 0,
+    preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true,
   },
   sheep: {
     id: 'sheep', label: 'Ovejas', emoji: '🐑', diet: 'herbivore', color: '#eef0f2',
     e0: 90, speed: 46, sense: 84, size: 10, metabolism: 2.8, moveCost: 0.03,
     grazeGain: 28, reproduceAt: 135, reproCost: 0.5, cooldown: 13, maxAge: 100, cap: 46,
-    preys: [], fleesFrom: ['fox'], catchEnergy: 0,
+    preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true,
   },
   cow: {
     id: 'cow', label: 'Vacas', emoji: '🐄', diet: 'herbivore', color: '#d8dde1',
@@ -51,3 +52,22 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
 };
 
 export const HERBIVORES: SpeciesId[] = ['chicken', 'sheep', 'cow'];
+
+// Juveniles are born small and grow to full size by adulthood, then hold.
+// PURE function of age — used only for rendering and the creature card, never
+// for sim dynamics, so population balance and snapshots stay unaffected.
+const NEWBORN_SCALE = 0.5; // fraction of adult size at birth
+export function growthFactor(species: SpeciesId, age: number): number {
+  const mature = SPECIES[species].maxAge * 0.28; // reaches adult size at ~28% of life
+  const t = Math.max(0, Math.min(1, age / mature));
+  const eased = t * (2 - t); // ease-out: fast early, tapering into adulthood
+  return NEWBORN_SCALE + (1 - NEWBORN_SCALE) * eased;
+}
+
+// A human label for how grown a creature is (for the Ficha).
+export function lifeStage(species: SpeciesId, age: number): { label: string; emoji: string } {
+  const g = growthFactor(species, age);
+  if (g < 0.72) return { label: 'Cría', emoji: '🐣' };
+  if (g < 0.995) return { label: 'Joven', emoji: '🌱' };
+  return { label: 'Adulto', emoji: '🌳' };
+}
