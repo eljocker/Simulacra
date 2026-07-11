@@ -83,6 +83,15 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   const nightSlow = 1 - 0.45 * ctx.night;
   const spd = a.genes.speed * nightSlow;
 
+  // deep night: the whole farm sleeps. Predators rest too, so it is safe for
+  // everyone to settle in place — they ease to a stop and doze until dawn.
+  if (ctx.night > 0.6) {
+    const damp = Math.min(1, ctx.dt * 2.2);
+    a.vx -= a.vx * damp;
+    a.vy -= a.vy * damp;
+    return;
+  }
+
   // land animals never enter the lagoon — they turn back at the shore
   const px = a.x - ctx.pond.x, py = a.y - ctx.pond.y;
   const pd = Math.hypot(px, py);

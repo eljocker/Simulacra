@@ -1,13 +1,26 @@
 import type { Engine } from '../engine/loop.ts';
-import type { LifeEvent, SpeciesId } from '../sim/types.ts';
-import type { SelectedInfo } from '../engine/store.ts';
+import type { LifeEvent } from '../sim/types.ts';
+import type { EntityKind, SelectedInfo } from '../engine/store.ts';
 import { fullness, growthFactor, hungerLabel, lifeStage } from '../sim/species.ts';
+import { SCAV_MAXAGE, SCAV_REPRO_AT } from '../sim/world.ts';
+import { ageLabel } from '../sim/time.ts';
 
-const SP: Record<SpeciesId, { n: string; e: string; diet: string }> = {
+const MEAL: Record<string, string> = {
+  pasto: '🌾 Pastó', grano: '🌽 Comió grano', fruta: '🍎 Comió fruta', presa: '🍖 Cazó una presa',
+};
+
+const SP: Record<EntityKind, { n: string; e: string; diet: string }> = {
   chicken: { n: 'Gallina', e: '🐔', diet: 'Herbívora · pica pasto' },
   sheep: { n: 'Oveja', e: '🐑', diet: 'Herbívora · pasta' },
   cow: { n: 'Vaca', e: '🐄', diet: 'Herbívora · pasta' },
   fox: { n: 'Zorro', e: '🦊', diet: 'Carnívoro · caza gallinas' },
+  scavenger: { n: 'Buitre', e: '🦅', diet: 'Carroñero · devora cadáveres' },
+};
+
+const SCAV_STATE: Record<NonNullable<SelectedInfo['state']>, string> = {
+  cruise: '🕊️ Sobrevolando',
+  dive: '⬇️ En picada',
+  feed: '🍖 Devorando',
 };
 
 function hhmm(f: number): string {
@@ -27,12 +40,16 @@ function line(e: LifeEvent): { ic: string; txt: string; tone: string } {
   if (e.kind === 'death') {
     const c = e.cause;
     const t = c === 'cazado' ? `Cazada por 🦊 #${e.by}`
-      : c === 'vejez' ? `Murió de vejez · ${Math.round(e.age ?? 0)}s`
+      : c === 'vejez' ? `Murió de vejez · ${ageLabel(e.age ?? 0)}`
       : c === 'hambre' ? 'Murió de hambre'
       : c === 'peste' ? 'Murió por la peste'
       : c === 'meteorito' ? 'Murió por un meteorito'
       : 'Murió';
     return { ic: '🕊️', txt: t, tone: 'death' };
+  }
+  if (e.kind === 'meal') {
+    const m = MEAL[e.cause ?? ''] ?? '🍽 Comió';
+    return { ic: m.split(' ')[0], txt: m.replace(/^\S+\s/, ''), tone: 'meal' };
   }
   return { ic: '✨', txt: 'Intervención divina', tone: 'divine' };
 }
@@ -66,7 +83,32 @@ export function Ficha({ engine, selected, events }: { engine: Engine; selected: 
 
       <div className="fk-diet">{sp.diet}</div>
 
-      {selected.alive && (
+      {selected.alive && selected.species === 'scavenger' && (
+        <div className="fk-stats">
+          {(() => {
+            const energy = selected.energy ?? 0;
+            const f = Math.max(0, Math.min(1, energy / SCAV_REPRO_AT));
+            const col = f > 0.4 ? 'var(--grass)' : f > 0.18 ? '#e0a13a' : '#c2503c';
+            return (
+              <>
+                <div className="fk-bar">
+                  <span className="fk-bl">Energía</span>
+                  <span className="fk-track"><span className="fk-fill" style={{ width: `${Math.round(f * 100)}%`, background: col }} /></span>
+                </div>
+                <div className="fk-hunger">
+                  <span className="fk-hstate ok">{selected.state ? SCAV_STATE[selected.state] : '🕊️ Sobrevolando'}</span>
+                </div>
+              </>
+            );
+          })()}
+          <div className="fk-meta">
+            <span>⏳ Edad <b>{ageLabel(selected.age ?? 0)}</b></span>
+            <span>❤️ Vida <b>{Math.round(Math.max(0, 100 - ((selected.age ?? 0) / SCAV_MAXAGE) * 100))}%</b></span>
+          </div>
+        </div>
+      )}
+
+      {selected.alive && selected.species !== 'scavenger' && (
         <div className="fk-stats">
           {(() => {
             const energy = selected.energy ?? 0;
@@ -92,7 +134,7 @@ export function Ficha({ engine, selected, events }: { engine: Engine; selected: 
             const pct = Math.round(growthFactor(selected.species, age) * 100);
             return (
               <div className="fk-meta">
-                <span>⏳ Edad <b>{Math.round(age)}s</b></span>
+                <span>⏳ Edad <b>{ageLabel(age)}</b></span>
                 <span>{stage.emoji} {stage.label} <b>{pct}%</b></span>
               </div>
             );

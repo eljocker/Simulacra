@@ -1,17 +1,13 @@
-import { World } from '../sim/world.ts';
+import { World, SCAV_REPRO_AT } from '../sim/world.ts';
 import type { Intervention, WorldSnapshot } from '../sim/types.ts';
 import { Renderer } from '../render/renderer.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
-import { Store, type HistoryPoint, type SelectedInfo } from './store.ts';
+import { fullness } from '../sim/species.ts';
+import { Store, type EntityKind, type HistoryPoint, type Roster, type SelectedInfo } from './store.ts';
 import { AUTOSAVE_ID, deleteSnapshot, getSnapshot, listSnapshots, putSnapshot, type SnapshotRecord } from '../persistence/db.ts';
 
 export type RendererFactory = (canvas: HTMLCanvasElement) => IRenderer;
 const default2D: RendererFactory = (c) => new Renderer(c);
-
-function realClockFraction(): number {
-  const d = new Date();
-  return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000) / 86400;
-}
 
 const FIXED = 1 / 60;
 const HISTORY_MAX = 200;
@@ -27,7 +23,7 @@ export class Engine {
   private speed = 1;
   private terrainSize = 1;
   private density = 1;
-  private selected: { id: number; species: import('../sim/types.ts').SpeciesId } | null = null;
+  private selected: { id: number; species: EntityKind } | null = null;
   private last = 0;
   private raf = 0;
   private statAcc = 0;
@@ -60,20 +56,43 @@ export class Engine {
 
   private selectedInfo(): SelectedInfo | null {
     if (!this.selected) return null;
+    if (this.selected.species === 'scavenger') {
+      const s = this.world.scavengers.find((x) => x.id === this.selected!.id);
+      if (s) return { id: s.id, species: 'scavenger', alive: true, age: s.age, energy: s.energy, state: s.state };
+      return { id: this.selected.id, species: 'scavenger', alive: false };
+    }
     const a = this.world.animals.find((x) => x.id === this.selected!.id);
     if (a) return { id: a.id, species: a.species, alive: true, age: a.age, energy: a.energy, genes: { ...a.genes }, eating: a.eating > 0 };
     return { id: this.selected.id, species: this.selected.species, alive: false };
   }
+
+  // A compact, id-sorted roster per kind so the HUD can expand a group and let
+  // the user pick one individual out of the herd.
+  private roster(): Roster {
+    const r: Roster = { chicken: [], sheep: [], cow: [], fox: [], scavenger: [] };
+    for (const a of this.world.animals) r[a.species].push({ id: a.id, f: fullness(a.species, a.energy), age: a.age });
+    for (const s of this.world.scavengers) {
+      r.scavenger.push({ id: s.id, f: Math.max(0, Math.min(1, s.energy / SCAV_REPRO_AT)), age: s.age });
+    }
+    for (const k of Object.keys(r) as EntityKind[]) r[k].sort((a, b) => a.id - b.id);
+    return r;
+  }
+
   private pushStats(): void {
-    this.store.setFrame(this.world.stats(), this.history, this.world.events, this.selectedInfo());
+    this.store.setFrame(this.world.stats(), this.history, this.world.events, this.selectedInfo(), this.roster());
   }
 
   select(id: number | null): void {
     if (id == null) { this.selected = null; }
     else {
       const a = this.world.animals.find((x) => x.id === id);
-      this.selected = a ? { id: a.id, species: a.species } : null;
+      if (a) this.selected = { id: a.id, species: a.species };
+      else {
+        const s = this.world.scavengers.find((x) => x.id === id);
+        this.selected = s ? { id: s.id, species: 'scavenger' } : null;
+      }
     }
+    this.renderer.setSelected?.(this.selected?.id ?? null);
     this.pushStats();
   }
 
@@ -83,7 +102,6 @@ export class Engine {
       let real = (now - this.last) / 1000;
       this.last = now;
       if (real > 0.1) real = 0.1;
-      this.world.clock = realClockFraction();
       if (this.running) {
         let dt = real * this.speed * PACE;
         while (dt > 0) {
@@ -133,6 +151,7 @@ export class Engine {
     this.world.seed();
     this.history = [];
     this.selected = null;
+    this.renderer.setSelected?.(null);
     this.renderer.reset?.();
     this.store.setWorldCfg(this.terrainSize, this.density);
     this.pushStats();
@@ -144,6 +163,7 @@ export class Engine {
     this.world.seed();
     this.history = [];
     this.selected = null;
+    this.renderer.setSelected?.(null);
     this.renderer.reset?.();
     this.pushStats();
   }
@@ -157,6 +177,7 @@ export class Engine {
     this.terrainSize = Math.max(this.terrainSize, 1); // keep UI factor; caps come from snapshot
     this.history = [];
     this.selected = null;
+    this.renderer.setSelected?.(null);
     this.renderer.reset?.();
     this.pushStats();
   }

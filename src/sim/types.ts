@@ -24,6 +24,7 @@ export interface Animal {
   sick: number; // disease timer (s), 0 = healthy
   wander: number; // wander heading bias
   eating: number; // >0 while actively feeding (drives the grazing pose + munch cue)
+  mealCd: number; // cooldown (s) before another meal is worth logging to its story
 }
 
 export interface Stats {
@@ -31,6 +32,7 @@ export interface Stats {
   sheep: number;
   cow: number;
   fox: number;
+  scavenger: number; // aerial carrion birds (buitres) — mortal, counted like the rest
   grass: number; // 0..100 (% of field covered)
   day: number;
   clock: number; // 0..1 fraction of day
@@ -49,7 +51,7 @@ export type Intervention =
   | { kind: 'meteor'; x?: number; y?: number }
   | { kind: 'feed'; x?: number; y?: number };
 
-export type LifeEventKind = 'birth' | 'death' | 'divine';
+export type LifeEventKind = 'birth' | 'death' | 'divine' | 'meal';
 
 // One entry in the world's log — a life story is the events sharing an `id`.
 export interface LifeEvent {

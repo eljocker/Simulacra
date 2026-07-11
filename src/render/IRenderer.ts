@@ -8,5 +8,6 @@ export interface IRenderer {
   draw(world: World): void;
   reset?(): void; // rebuild scenery after a world reset/snapshot load
   setPickHandler?(cb: (id: number | null) => void): void; // click-to-select an animal
+  setSelected?(id: number | null): void; // highlight + track an entity with a placemark
   dispose?(): void;
 }

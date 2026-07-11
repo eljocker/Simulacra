@@ -139,6 +139,7 @@ export class ThreeRenderer implements IRenderer {
   private corpseMeshes = {} as Record<SpeciesId, THREE.InstancedMesh>; // grey fallen bodies
   private foot = {} as Record<SpeciesId, number>; // -min.y of each model: how high to sit it so its feet rest on the ground
   private lieHalf = {} as Record<SpeciesId, number>; // resting height once tipped on its side
+  private modelH = {} as Record<SpeciesId, number>; // full standing height (max.y - min.y) — for the placemark
   private dummy = new THREE.Object3D();
   private tmpColor = new THREE.Color();
   private rain: THREE.Points;
@@ -180,8 +181,20 @@ export class ThreeRenderer implements IRenderer {
   private instIds: Record<SpeciesId, number[]> = { chicken: [], sheep: [], cow: [], fox: [] };
   private moved = 0;
 
+  // selection placemark: a ground ring + a bobbing downward pin that tracks the chosen entity
+  private selectedId: number | null = null;
+  private markRing!: THREE.Mesh;
+  private markPin!: THREE.Mesh;
+
   setPickHandler(cb: (id: number | null) => void): void {
     this.pickCb = cb;
+  }
+
+  setSelected(id: number | null): void {
+    this.selectedId = id;
+    const on = id != null;
+    this.markRing.visible = on;
+    this.markPin.visible = on;
   }
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -212,6 +225,7 @@ export class ThreeRenderer implements IRenderer {
       im.geometry.computeBoundingSphere(); // needed for raycasting the instances
       const bb = im.geometry.boundingBox;
       this.foot[sp] = -(bb?.min.y ?? 0); // grounding offset (standing)
+      this.modelH[sp] = (bb?.max.y ?? 0.5) - (bb?.min.y ?? -0.5); // full standing height
       // once tipped 90° on its side, local +X becomes the vertical axis
       this.lieHalf[sp] = Math.max(Math.abs(bb?.min.x ?? 0.4), Math.abs(bb?.max.x ?? 0.4));
       this.meshes[sp] = im;
@@ -281,7 +295,65 @@ export class ThreeRenderer implements IRenderer {
       this.scene.add(s);
     }
 
+    // selection placemark — a bright teal ring on the ground and a pin pointing
+    // down at the head. Both draw on top (depthTest off) so they never hide behind
+    // scenery, and they track the selected entity every frame.
+    const markColor = 0x14e0c8;
+    this.markRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1, 0.085, 8, 40),
+      new THREE.MeshBasicMaterial({ color: markColor, transparent: true, opacity: 0.92, depthTest: false }),
+    );
+    this.markRing.rotation.x = -Math.PI / 2;
+    this.markRing.renderOrder = 998;
+    this.markRing.visible = false;
+    this.markPin = new THREE.Mesh(
+      new THREE.ConeGeometry(0.42, 1, 4),
+      new THREE.MeshBasicMaterial({ color: markColor, depthTest: false }),
+    );
+    this.markPin.rotation.x = Math.PI; // tip points straight down
+    this.markPin.renderOrder = 999;
+    this.markPin.visible = false;
+    this.scene.add(this.markRing, this.markPin);
+
     this.attachControls();
+  }
+
+  // Place the tracking marker over the selected entity (animal on the ground or
+  // scavenger in the air). Called every frame so it follows the creature.
+  private updateMarker(world: World): void {
+    if (this.selectedId == null) return;
+    const pulse = 1 + Math.sin(this.t * 0.14) * 0.09;
+    const bob = Math.sin(this.t * 0.1) * 0.12;
+
+    const a = world.animals.find((x) => x.id === this.selectedId);
+    if (a) {
+      const sx = (a.x - world.w / 2) * SC, sz = (a.y - world.h / 2) * SC;
+      const gy = this.terrainY(sx, sz);
+      const s = a.genes.size * growthFactor(a.species, a.age) * a.born * 0.085;
+      const r = Math.max(0.9, this.lieHalf[a.species] * s * 1.7);
+      const top = gy + this.modelH[a.species] * s;
+      this.markRing.position.set(sx, gy + 0.06, sz);
+      this.markRing.scale.set(r * pulse, r * pulse, r * pulse);
+      this.markPin.position.set(sx, top + 1.1 + bob, sz);
+      this.markPin.scale.setScalar(Math.max(0.7, r * 0.8));
+      return;
+    }
+
+    const sc = world.scavengers.find((x) => x.id === this.selectedId);
+    if (sc) {
+      const sx = (sc.x - world.w / 2) * SC, sz = (sc.y - world.h / 2) * SC;
+      const fly = this.terrainY(sx, sz) + sc.h * SC;
+      const r = 1.9;
+      this.markRing.position.set(sx, fly - 1.1, sz);
+      this.markRing.scale.set(r * pulse, r * pulse, r * pulse);
+      this.markPin.position.set(sx, fly + 2 + bob, sz);
+      this.markPin.scale.setScalar(1.2);
+      return;
+    }
+
+    // the selected creature is gone (died) — retire the marker
+    this.markRing.visible = false;
+    this.markPin.visible = false;
   }
 
   // procedural terrain height at a scene-space point (matches the mesh, so
@@ -355,6 +427,13 @@ export class ThreeRenderer implements IRenderer {
       const sp = (Object.keys(this.meshes) as SpeciesId[]).find((k) => this.meshes[k] === hit.object);
       const id = sp ? this.instIds[sp][hit.instanceId] : undefined;
       if (id != null) { this.pickCb(id); return; }
+    }
+    // no ground animal under the cursor — try the birds circling overhead
+    const birdHits = this.raycaster.intersectObjects(Array.from(this.birds.values()), false);
+    if (birdHits.length) {
+      for (const [sc, sp] of this.birds) {
+        if (sp === birdHits[0].object) { this.pickCb(sc.id); return; }
+      }
     }
     this.pickCb(null); // clicked empty ground → clear selection
   }
@@ -511,8 +590,9 @@ export class ThreeRenderer implements IRenderer {
       const sx = (a.x - world.w / 2) * SC, sz = (a.y - world.h / 2) * SC;
       this.dummy.position.set(sx, this.terrainY(sx, sz) + this.foot[a.species] * s, sz);
       this.dummy.rotation.set(0, -a.heading, 0);
-      // eating: dip the nose toward the ground with a little chewing bob
-      if (a.eating > 0) this.dummy.rotateZ(-(0.32 + Math.sin(this.t * 0.5 + a.id) * 0.08));
+      // eating: dip the nose toward the ground with a little chewing bob. The bob
+      // is driven by the animal's own age (sim time), so it freezes when paused.
+      if (a.eating > 0) this.dummy.rotateZ(-(0.32 + Math.sin(a.age * 8 + a.id) * 0.08));
       this.dummy.scale.setScalar(s);
       this.dummy.updateMatrix();
       im.setMatrixAt(i, this.dummy.matrix);
@@ -688,6 +768,8 @@ export class ThreeRenderer implements IRenderer {
       sp.scale.set(2.6 * flap, 2.6 * (1.3 - flap * 0.4), 1);
       (sp.material as THREE.SpriteMaterial).opacity = lerp(0.9, 0.5, n); // fade a bit at night
     }
+
+    this.updateMarker(world);
 
     this.renderer.render(this.scene, this.camera);
   }

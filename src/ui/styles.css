@@ -98,6 +98,7 @@ body {
   border-bottom: 1px solid var(--line);
 }
 .hud .clock .day { font-weight: 700; font-size: 14px; }
+.hud .cal { font-family: var(--mono); font-size: 11px; color: var(--ink-soft); margin: -2px 0 10px; }
 .hud .clock .tod { font-family: var(--mono); font-size: 12px; color: var(--ink-soft); display: flex; align-items: center; gap: 6px; }
 .hud .rows { display: flex; flex-direction: column; gap: 6px; }
 .hud .r { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
@@ -106,6 +107,34 @@ body {
 .hud .r .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-weight: 700; }
 .hud .bar { height: 6px; border-radius: 4px; background: rgba(0,0,0,0.1); overflow: hidden; margin-top: 3px; }
 .hud .bar > span { display: block; height: 100%; background: var(--grass); border-radius: 4px; transition: width 0.3s; }
+
+/* expandable species groups + individual roster */
+.hud .grp { display: flex; flex-direction: column; }
+.hud .rbtn {
+  appearance: none; background: none; border: 0; padding: 3px 4px; margin: -3px -4px;
+  border-radius: 8px; color: inherit; font: inherit; cursor: pointer; width: calc(100% + 8px);
+}
+.hud .rbtn:hover:not(:disabled) { background: rgba(90,70,40,0.08); }
+.hud .rbtn:disabled { cursor: default; opacity: 0.5; }
+.hud .rbtn .chev { display: inline-block; font-size: 9px; color: var(--ink-soft); transition: transform 0.22s; transform: rotate(0deg); }
+.hud .rbtn .chev.down { transform: rotate(90deg); }
+.hud .sub {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 5px 0 3px 4px; padding-left: 8px; border-left: 1px solid var(--line);
+  max-height: 168px; overflow-y: auto;
+}
+.hud .sub-empty { font-size: 11px; color: var(--ink-soft); padding: 2px 4px; }
+.hud .sub-i {
+  appearance: none; border: 0; background: none; font: inherit; cursor: pointer;
+  display: flex; align-items: center; gap: 7px; padding: 3px 6px; border-radius: 7px;
+  color: var(--ink); text-align: left;
+}
+.hud .sub-i:hover { background: rgba(90,70,40,0.09); }
+.hud .sub-i.sel { background: rgba(20,224,200,0.16); box-shadow: inset 0 0 0 1px rgba(20,180,160,0.5); }
+.hud .sub-i .sub-ic { font-size: 12px; }
+.hud .sub-i .sub-id { font-family: var(--mono); font-size: 11px; font-weight: 700; }
+.hud .sub-i .sub-age { font-family: var(--mono); font-size: 10px; color: var(--ink-soft); margin-left: auto; }
+.hud .sub-i .sub-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 
 /* dock (god panel) */
 .dock {
@@ -338,6 +367,7 @@ body.gallery.idle .gallery-btn { opacity: 0; }
 .fk-ev.birth { background: rgba(79, 143, 58, 0.09); }
 .fk-ev.death { background: rgba(194, 80, 60, 0.08); }
 .fk-ev.divine { background: rgba(207, 156, 30, 0.12); }
+.fk-ev.meal { background: rgba(90, 148, 64, 0.06); }
 .fk-ev-ic { font-size: 14px; width: 18px; text-align: center; flex: none; }
 .fk-ev-tx { flex: 1; color: var(--ink); }
 .fk-ev-tm { font-family: var(--mono); font-size: 10px; color: var(--ink-soft); flex: none; font-variant-numeric: tabular-nums; }

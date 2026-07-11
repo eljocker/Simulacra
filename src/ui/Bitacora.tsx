@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { LifeEvent, SpeciesId } from '../sim/types.ts';
+import { ageLabel } from '../sim/time.ts';
 
 const SP: Record<SpeciesId, { n: string; e: string }> = {
   chicken: { n: 'Gallina', e: '🐔' },
@@ -33,7 +34,7 @@ function describe(e: LifeEvent): { icon: string; main: string; sub: string; tone
   }
   const c = e.cause;
   const how = c === 'cazado' ? `cazada por 🦊 #${e.by}`
-    : c === 'vejez' ? `murió de vejez · ${Math.round(e.age ?? 0)}s`
+    : c === 'vejez' ? `murió de vejez · ${ageLabel(e.age ?? 0)}`
     : c === 'hambre' ? 'murió de hambre'
     : c === 'peste' ? 'murió por la peste'
     : c === 'meteorito' ? 'murió por un meteorito'
@@ -43,12 +44,15 @@ function describe(e: LifeEvent): { icon: string; main: string; sub: string; tone
 
 export function Bitacora({ events }: { events: LifeEvent[] }) {
   const [open, setOpen] = useState(window.innerWidth > 900);
-  const recent = events.slice(-80).reverse();
+  // meals live in each animal's own story (the Ficha) — the Bitácora stays a
+  // feed of births, deaths and divine acts so it doesn't drown in "comió" lines.
+  const feed = events.filter((e) => e.kind !== 'meal');
+  const recent = feed.slice(-80).reverse();
   return (
     <section className={`bitacora${open ? '' : ' closed'}`}>
       <div className="bit-head" onClick={() => setOpen((o) => !o)}>
         <span className="bit-title">📜 Bitácora</span>
-        <span className="bit-count">{events.length}</span>
+        <span className="bit-count">{feed.length}</span>
         <span className="chev">▾</span>
       </div>
       {open && (

@@ -97,7 +97,7 @@ function Connected({ engine }: { engine: Engine }) {
   const ui = useSyncExternalStore(engine.store.subscribe, engine.store.getSnapshot);
   return (
     <>
-      <HUD stats={ui.stats} />
+      <HUD stats={ui.stats} roster={ui.roster} selectedId={ui.selected?.id ?? null} onSelect={(id) => engine.select(id)} />
       <Bitacora events={ui.events} />
       {ui.selected && <Ficha engine={engine} selected={ui.selected} events={ui.events} />}
       <GodPanel engine={engine} ui={ui} />

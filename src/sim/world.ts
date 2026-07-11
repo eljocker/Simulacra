@@ -4,8 +4,11 @@ import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
 import { GrassField } from './grass.ts';
 import { steer, type BehaviorCtx } from './behavior.ts';
+import { DAY_LENGTH, SECONDS_PER_YEAR } from './time.ts';
 
-const EVENT_CAP = 300;
+const EVENT_CAP = 500; // shared log; meals are frequent, so give births/deaths room to survive
+const MEAL_LOG_CD = 22; // min seconds between an animal's logged meals (keeps the log sane)
+const SLEEP_NIGHT = 0.6; // night factor above which the farm sleeps (predators too)
 const CORPSE_TIME = 3.6; // seconds a body lies on the ground before its soul rises
 const GESTATION = 6; // seconds a chicken egg incubates before it hatches
 // aerial scavengers (buitres)
@@ -13,11 +16,11 @@ const SCAV_CRUISE_H = 240; // cruising height (world px)
 const SCAV_FEED_H = 16;    // height while feeding on a corpse
 const SCAV_SPEED = 74;
 const SCAV_SENSE = 520;    // how far they spot a corpse
-const SCAV_MAXAGE = 170;
+export const SCAV_MAXAGE = 14 * SECONDS_PER_YEAR; // buitres are long-lived
 const SCAV_MIN = 2;        // a couple always circle overhead
 const SCAV_CAP = 6;
 const SCAV_FEED_TIME = 1.3; // seconds to devour a corpse
-const SCAV_REPRO_AT = 150;
+export const SCAV_REPRO_AT = 150;
 // ducks (aquatic — never leave the pond)
 const DUCK_MIN = 3;
 const DUCK_MAXAGE = 220;
@@ -59,6 +62,14 @@ export class World {
   private logEvent(e: Omit<LifeEvent, 'seq' | 'clock'>): void {
     this.events.push({ seq: this.evSeq++, clock: this.clock, ...e });
     if (this.events.length > EVENT_CAP) this.events.shift();
+  }
+
+  // record a meal in an animal's life story, throttled so the shared log doesn't
+  // drown in "comió" lines (each animal logs a meal at most every MEAL_LOG_CD).
+  private logMeal(a: Animal, cause: string): void {
+    if (a.mealCd > 0) return;
+    a.mealCd = MEAL_LOG_CD;
+    this.logEvent({ kind: 'meal', species: a.species, id: a.id, cause });
   }
 
   // lay a fallen animal on the ground; its soul rises once CORPSE_TIME elapses
@@ -283,7 +294,7 @@ export class World {
     return {
       id: this.nextId++, species, x, y, vx: 0, vy: 0, heading: this.rng.range(0, 6.28),
       energy: def.e0, age: 0, genes: g, cooldown: def.cooldown * 0.5,
-      born: 0, flash: 0, sick: 0, wander: this.rng.range(0, 6.28), eating: 0,
+      born: 0, flash: 0, sick: 0, wander: this.rng.range(0, 6.28), eating: 0, mealCd: 0,
     };
   }
 
@@ -311,12 +322,16 @@ export class World {
   }
 
   tick(dt: number): void {
-    // clock is set externally (real time); here we only run weather + ecosystem
+    // the simulation drives its own calendar, so days and years pass with the sim
+    // (and pause/speed change how fast) — not with the wall clock.
+    this.clock += dt / DAY_LENGTH;
+    while (this.clock >= 1) { this.clock -= 1; this.day++; }
     if (this.weatherTimer > 0) {
       this.weatherTimer -= dt;
       if (this.weatherTimer <= 0) this.weather = 'clear';
     }
     const night = this.nightFactor();
+    const asleep = night > SLEEP_NIGHT; // the farm rests at night: no feeding, hunting or breeding
 
     // perception grid
     const grid = new SpatialGrid(this.w, this.h, 96);
@@ -338,6 +353,7 @@ export class World {
       const def = SPECIES[a.species];
       a.age += dt;
       a.cooldown -= dt;
+      if (a.mealCd > 0) a.mealCd -= dt;
       if (a.born < 1) a.born = Math.min(1, a.born + dt * 2.5);
       if (a.flash > 0) a.flash -= dt;
       if (a.eating > 0) a.eating -= dt;
@@ -367,12 +383,19 @@ export class World {
       }
 
       const speed = Math.hypot(a.vx, a.vy);
-      a.energy -= (def.metabolism + def.moveCost * speed + (a.sick > 0 ? 2.4 : 0)) * dt;
+      // sleeping animals rest — a slower metabolism carries them through the night
+      a.energy -= (def.metabolism * (asleep ? 0.45 : 1) + def.moveCost * speed + (a.sick > 0 ? 2.4 : 0)) * dt;
 
-      if (def.diet === 'herbivore') {
+      if (asleep) {
+        // dozing: no feeding, hunting or breeding until dawn
+      } else if (def.diet === 'herbivore') {
         // graze grass under feet — the "eating" pose shows only when it slows to feed
         const eaten = this.grass.graze(a.x, a.y, 1.4 * dt);
-        if (eaten > 0) { a.energy += eaten * def.grazeGain; if (speed < 14) a.eating = 0.4; }
+        if (eaten > 0) {
+          a.energy += eaten * def.grazeGain;
+          if (speed < 14) a.eating = 0.4;
+          if (a.energy < def.reproduceAt) this.logMeal(a, 'pasto');
+        }
         // eat grain if close
         for (let i = this.grain.length - 1; i >= 0; i--) {
           const gr = this.grain[i];
@@ -381,6 +404,7 @@ export class World {
             gr.amount -= take;
             a.energy += take;
             a.flash = 0.25; a.eating = 0.45;
+            this.logMeal(a, 'grano');
             if (gr.amount <= 0) this.grain.splice(i, 1);
             break;
           }
@@ -393,6 +417,7 @@ export class World {
           if ((fr.x - a.x) ** 2 + (fr.y - a.y) ** 2 < (a.genes.size + 10) ** 2) {
             a.energy += fr.amount;
             a.flash = 0.3; a.eating = 0.5;
+            this.logMeal(a, 'fruta');
             this.effects.push({ x: fr.x, y: fr.y, t: 0, life: 0.5, kind: 'heart', color: '#e0473a' });
             this.fruits.splice(i, 1);
             break;
@@ -407,6 +432,7 @@ export class World {
           this.died++;
           a.energy += def.catchEnergy;
           a.flash = 0.3;
+          this.logMeal(a, 'presa');
           this.layCorpse(prey);
           this.logEvent({ kind: 'death', species: prey.species, id: prey.id, cause: 'cazado', by: a.id, age: prey.age });
         }
@@ -414,7 +440,7 @@ export class World {
 
       // reproduction: a well-fed, rested adult breeds (offspring inherits
       // mutated genes, so traits drift across generations)
-      if (a.energy > def.reproduceAt && a.cooldown <= 0 && a.age > def.maxAge * 0.1 && pop[a.species] < def.cap * this.capScale) {
+      if (!asleep && a.energy > def.reproduceAt && a.cooldown <= 0 && a.age > def.maxAge * 0.1 && pop[a.species] < def.cap * this.capScale) {
         a.energy *= def.reproCost;
         a.cooldown = def.cooldown;
         if (a.species === 'chicken') {
@@ -601,6 +627,7 @@ export class World {
       sheep: this.count('sheep'),
       cow: this.count('cow'),
       fox: this.count('fox'),
+      scavenger: this.scavengers.length,
       grass: this.grass.coverage(),
       day: this.day,
       clock: this.clock,
