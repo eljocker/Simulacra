@@ -1,4 +1,4 @@
-import type { Animal, Corpse, Effect, Egg, Grain, Intervention, LifeEvent, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
+import type { Animal, Corpse, Effect, Egg, Grain, Intervention, LifeEvent, Scavenger, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
 import { SPECIES, HERBIVORES } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
@@ -8,6 +8,16 @@ import { steer, type BehaviorCtx } from './behavior.ts';
 const EVENT_CAP = 300;
 const CORPSE_TIME = 3.6; // seconds a body lies on the ground before its soul rises
 const GESTATION = 6; // seconds a chicken egg incubates before it hatches
+// aerial scavengers (buitres)
+const SCAV_CRUISE_H = 240; // cruising height (world px)
+const SCAV_FEED_H = 16;    // height while feeding on a corpse
+const SCAV_SPEED = 74;
+const SCAV_SENSE = 520;    // how far they spot a corpse
+const SCAV_MAXAGE = 170;
+const SCAV_MIN = 2;        // a couple always circle overhead
+const SCAV_CAP = 6;
+const SCAV_FEED_TIME = 1.3; // seconds to devour a corpse
+const SCAV_REPRO_AT = 150;
 
 export class World {
   w: number;
@@ -16,6 +26,7 @@ export class World {
   animals: Animal[] = [];
   corpses: Corpse[] = [];
   eggs: Egg[] = [];
+  scavengers: Scavenger[] = [];
   grass: GrassField;
   grain: Grain[] = [];
   effects: Effect[] = [];
@@ -44,6 +55,98 @@ export class World {
     });
   }
 
+  private makeScavenger(x: number, y: number): Scavenger {
+    return {
+      id: this.nextId++, x, y, vx: 0, vy: 0, heading: this.rng.range(0, 6.28),
+      h: SCAV_CRUISE_H, energy: this.rng.range(90, 130), age: this.rng.range(0, 40),
+      state: 'cruise', feedT: 0, flap: this.rng.range(0, 6.28),
+    };
+  }
+
+  // Aerial scavengers: circle overhead, dive to devour a corpse before its soul
+  // rises (nutrients, not loss), and are themselves mortal — they age and starve.
+  private updateScavengers(dt: number): void {
+    const claimed = new Set<Corpse>();
+    for (let i = this.scavengers.length - 1; i >= 0; i--) {
+      const s = this.scavengers[i];
+      s.age += dt;
+      s.energy -= 1.1 * dt; // slow metabolism; corpses replenish it
+      s.flap += dt * (s.state === 'cruise' ? 6 : 11);
+
+      // death: old age or starvation → drift down and release a soul
+      if (s.age > SCAV_MAXAGE || s.energy <= 0) {
+        this.effects.push({ x: s.x, y: s.y, t: 0, life: 2.6, kind: 'soul', color: '#6b6f76' });
+        this.scavengers.splice(i, 1);
+        continue;
+      }
+
+      // find the nearest unclaimed corpse to feed on
+      let target: Corpse | null = null;
+      let bd = SCAV_SENSE * SCAV_SENSE;
+      for (const c of this.corpses) {
+        if (claimed.has(c)) continue;
+        const d = (c.x - s.x) ** 2 + (c.y - s.y) ** 2;
+        if (d < bd) { bd = d; target = c; }
+      }
+
+      if (target) {
+        claimed.add(target);
+        const dx = target.x - s.x, dy = target.y - s.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        s.state = dist < 26 && s.h < SCAV_FEED_H * 3 ? 'feed' : 'dive';
+        if (s.state === 'feed') {
+          s.h += (SCAV_FEED_H - s.h) * Math.min(1, dt * 4);
+          s.vx *= 0.8; s.vy *= 0.8;
+          s.feedT += dt;
+          if (s.feedT >= SCAV_FEED_TIME) {
+            // devour it: the body is consumed, so NO soul rises — the cycle closes
+            const idx = this.corpses.indexOf(target);
+            if (idx >= 0) this.corpses.splice(idx, 1);
+            s.energy += 46;
+            s.feedT = 0;
+            s.state = 'cruise';
+          }
+        } else { // dive toward the corpse, losing height
+          const spd = SCAV_SPEED * 1.15;
+          s.vx += ((dx / dist) * spd - s.vx) * Math.min(1, dt * 2.4);
+          s.vy += ((dy / dist) * spd - s.vy) * Math.min(1, dt * 2.4);
+          const wantH = SCAV_FEED_H + Math.min(1, dist / 220) * (SCAV_CRUISE_H - SCAV_FEED_H);
+          s.h += (wantH - s.h) * Math.min(1, dt * 3.2);
+          s.feedT = 0;
+        }
+      } else {
+        // cruise: gentle circling, climb back to cruising height
+        s.state = 'cruise';
+        s.heading += 0.5 * dt; // lazy circle
+        const spd = SCAV_SPEED * (0.5 + 0.5 * Math.abs(Math.sin(s.age * 0.2)));
+        s.vx += (Math.cos(s.heading) * spd - s.vx) * Math.min(1, dt * 1.2);
+        s.vy += (Math.sin(s.heading) * spd - s.vy) * Math.min(1, dt * 1.2);
+        s.h += (SCAV_CRUISE_H - s.h) * Math.min(1, dt * 0.8);
+        s.feedT = 0;
+      }
+
+      // integrate + wrap softly inside the field
+      s.x += s.vx * dt; s.y += s.vy * dt;
+      if (s.x < 20) { s.x = 20; s.heading = Math.PI - s.heading; }
+      else if (s.x > this.w - 20) { s.x = this.w - 20; s.heading = Math.PI - s.heading; }
+      if (s.y < 20) { s.y = 20; s.heading = -s.heading; }
+      else if (s.y > this.h - 20) { s.y = this.h - 20; s.heading = -s.heading; }
+      if (s.vx * s.vx + s.vy * s.vy > 1) s.heading = Math.atan2(s.vy, s.vx);
+
+      // reproduce when well-fed (keeps a small aerial population)
+      if (s.energy > SCAV_REPRO_AT && this.scavengers.length < SCAV_CAP) {
+        s.energy *= 0.55;
+        this.scavengers.push(this.makeScavenger(s.x, s.y));
+      }
+    }
+
+    // a couple always drift in from beyond the horizon
+    if (this.scavengers.length < SCAV_MIN) {
+      const edge = this.rng.range(0, this.h);
+      this.scavengers.push(this.makeScavenger(this.rng.chance(0.5) ? 20 : this.w - 20, edge));
+    }
+  }
+
   constructor(w: number, h: number, seed = 1) {
     this.w = w;
     this.h = h;
@@ -67,6 +170,7 @@ export class World {
     this.animals = [];
     this.corpses = [];
     this.eggs = [];
+    this.scavengers = [];
     this.grain = [];
     this.effects = [];
     this.events = [];
@@ -87,6 +191,9 @@ export class World {
         a.age = this.rng.range(5, 30);
         this.animals.push(a);
       }
+    }
+    for (let i = 0; i < SCAV_MIN; i++) {
+      this.scavengers.push(this.makeScavenger(this.rng.range(60, this.w - 60), this.rng.range(60, this.h - 60)));
     }
   }
 
@@ -283,6 +390,7 @@ export class World {
         this.eggs.splice(i, 1);
       }
     }
+    this.updateScavengers(dt);
 
     // rescue effect — a farm shouldn't die out completely
     this.rescueTimer += dt;
@@ -404,6 +512,7 @@ export class World {
       animals: this.animals.map((a) => ({ ...a, genes: { ...a.genes } })),
       corpses: this.corpses.map((c) => ({ ...c })),
       eggs: this.eggs.map((e) => ({ ...e, genes: { ...e.genes } })),
+      scavengers: this.scavengers.map((s) => ({ ...s })),
       grain: this.grain.map((g) => ({ ...g })),
       grass: this.grass.toJSON(),
       events: this.events.map((e) => ({ ...e })),
@@ -421,6 +530,7 @@ export class World {
     this.animals = s.animals.map((a) => ({ ...a, genes: { ...a.genes } }));
     this.corpses = (s.corpses ?? []).map((c) => ({ ...c }));
     this.eggs = (s.eggs ?? []).map((e) => ({ ...e, genes: { ...e.genes } }));
+    this.scavengers = (s.scavengers ?? []).map((sc) => ({ ...sc }));
     this.grain = s.grain.map((g) => ({ ...g }));
     this.grass.load(s.grass);
     this.events = (s.events ?? []).map((e) => ({ ...e }));

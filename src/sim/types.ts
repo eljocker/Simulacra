@@ -79,6 +79,7 @@ export interface WorldSnapshot {
   animals: Animal[];
   corpses: Corpse[];
   eggs: Egg[];
+  scavengers: Scavenger[];
   grain: Grain[];
   grass: import('./grass.ts').GrassSnapshot;
   events: LifeEvent[];
@@ -101,6 +102,23 @@ export interface Egg {
   t: number; // incubation elapsed (s)
   life: number; // gestation time (s)
   wobble: number; // phase for the pre-hatch wobble
+}
+
+// An aerial scavenger (buitre): circles overhead, dives to devour a corpse
+// before its soul can rise, and is itself mortal (ages and starves).
+export interface Scavenger {
+  id: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  heading: number;
+  h: number; // height above the terrain (world px); high = cruising, low = feeding
+  energy: number;
+  age: number;
+  state: 'cruise' | 'dive' | 'feed';
+  feedT: number; // seconds spent feeding on the current corpse
+  flap: number; // wing-flap phase
 }
 
 export interface Effect {

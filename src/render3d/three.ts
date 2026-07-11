@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { World } from '../sim/world.ts';
-import type { Effect, SpeciesId } from '../sim/types.ts';
+import type { Effect, Scavenger, SpeciesId } from '../sim/types.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
 import { growthFactor } from '../sim/species.ts';
 import { fbm } from './noise.ts';
@@ -109,6 +109,23 @@ function makeAngelTexture(): THREE.Texture {
   return new THREE.CanvasTexture(c);
 }
 
+// a dark bird silhouette (two wings) for the aerial scavengers, seen from below
+function makeBirdTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  g.strokeStyle = 'rgba(38,36,40,0.92)';
+  g.lineWidth = 5;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(6, 34); g.quadraticCurveTo(24, 16, 32, 30); // left wing
+  g.quadraticCurveTo(40, 16, 58, 34); // right wing
+  g.stroke();
+  g.fillStyle = 'rgba(30,28,32,0.95)';
+  g.beginPath(); g.ellipse(32, 31, 3.2, 5.2, 0, 0, 6.2832); g.fill(); // body
+  return new THREE.CanvasTexture(c);
+}
+
 export class ThreeRenderer implements IRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -129,6 +146,8 @@ export class ThreeRenderer implements IRenderer {
   private foliage: THREE.Object3D[] = []; // tree crowns, swayed by wind
   private angelTex = makeAngelTexture();
   private souls = new Map<Effect, THREE.Sprite>(); // rising souls, keyed by their effect
+  private birdTex = makeBirdTexture();
+  private birds = new Map<Scavenger, THREE.Sprite>(); // aerial scavengers
   private built = false;
   private t = 0; // frame counter for ambient motion (clouds, wind)
 
@@ -587,6 +606,28 @@ export class ThreeRenderer implements IRenderer {
       sp.position.set(sx + Math.sin(eff.t * 3) * 0.5, this.terrainY(sx, sz) + 1 + k * 11, sz);
       sp.scale.setScalar(1.7 + k * 1.3);
       (sp.material as THREE.SpriteMaterial).opacity = Math.min(1, k / 0.15) * (1 - k * k);
+    }
+
+    // aerial scavengers — dark birds circling overhead, diving to corpses
+    for (const [sc, sp] of this.birds) {
+      if (!world.scavengers.includes(sc)) {
+        this.scene.remove(sp);
+        (sp.material as THREE.SpriteMaterial).dispose();
+        this.birds.delete(sc);
+      }
+    }
+    for (const sc of world.scavengers) {
+      let sp = this.birds.get(sc);
+      if (!sp) {
+        sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.birdTex, transparent: true, depthWrite: false }));
+        this.birds.set(sc, sp);
+        this.scene.add(sp);
+      }
+      const sx = (sc.x - world.w / 2) * SC, sz = (sc.y - world.h / 2) * SC;
+      sp.position.set(sx, this.terrainY(sx, sz) + sc.h * SC, sz);
+      const flap = 0.82 + Math.abs(Math.sin(sc.flap)) * 0.5; // wing-beat: squash horizontally
+      sp.scale.set(2.6 * flap, 2.6 * (1.3 - flap * 0.4), 1);
+      (sp.material as THREE.SpriteMaterial).opacity = lerp(0.9, 0.5, n); // fade a bit at night
     }
 
     this.renderer.render(this.scene, this.camera);
