@@ -1,0 +1,26 @@
+{
+  "name": "simulacra-granja",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Simulación de vida artificial en una granja — motor puro + render + UI React, con panel modo-dios.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "sim:check": "node --experimental-strip-types --no-warnings scripts/balance.ts"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.0.3"
+  }
+}

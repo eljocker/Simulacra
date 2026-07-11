@@ -1,43 +1,56 @@
-# Simulacra · Terrario de vida artificial
+# Simulacra · La Granja
 
-Un **ecosistema vivo** en un único archivo HTML, sin dependencias. Plantas,
-herbívoros y depredadores comparten un estanque: comen, huyen, cazan, se
-reproducen (con mutaciones que se heredan) y mueren. Nadie guía a nadie — las
-poblaciones se equilibran solas en oscilaciones de tipo depredador-presa.
+Una simulación de vida artificial ambientada en una **granja viva**: gallinas,
+ovejas y vacas pastan mientras los zorros acechan. El ecosistema se equilibra
+solo… hasta que **tú intervienes como un dios**: trae la lluvia, desata una
+peste, suelta un zorro o arrasa un rincón con un meteorito.
 
-## Verlo
+**En vivo:** https://eljocker.github.io/Simulacra
 
-- **En vivo (GitHub Pages):** https://eljocker.github.io/Simulacra — se publica
-  solo en cada push vía `.github/workflows/deploy-pages.yml`.
-- **Local:** abre `index.html` en cualquier navegador. No necesita servidor.
+## Stack
 
-## Qué estás viendo
+Proyecto moderno, separado por responsabilidades:
 
-| | |
-|---|---|
-| 🟢 **Planta** | Alimento que crece solo por el estanque. |
-| 🐟 **Herbívoro** | Busca plantas para comer; huye de los depredadores. |
-| 🦈 **Depredador** | Caza herbívoros. |
+- **Vite + React + TypeScript**, empaquetado a un **único `index.html`**
+  autocontenido (`vite-plugin-singlefile`) — el mismo build sirve para GitHub
+  Pages y como Artifact de Claude.
+- **`src/sim/`** — motor de simulación **puro** (sin DOM, determinista y
+  testeable): `rng`, `types`, `species`, `grid` (hash espacial), `grass`,
+  `behavior`, `world` (orquestador de sistemas).
+- **`src/engine/`** — `loop` (bucle de tiempo fijo con acumulador) y `store`
+  (estado reactivo mínimo compatible con `useSyncExternalStore`).
+- **`src/render/`** — `renderer` sobre canvas + `sprites` de cada animal +
+  `palette`. Dibuja pasto, granero, estanque, clima y ciclo día/noche.
+- **`src/ui/`** — React: `HUD`, `GodPanel` (panel divino), `PopulationChart`.
+- **`scripts/balance.ts`** — arnés que corre el motor puro en Node para validar
+  que la granja no colapsa.
 
-Cada ser tiene energía, edad y genes (velocidad, vista, tamaño). Con energía
-suficiente se reproduce y su cría hereda los genes con pequeñas mutaciones —
-así el terrario **evoluciona** con el tiempo. Sin comida, la energía baja y muere.
+## Desarrollo
 
-## Controles
+```bash
+npm install
+npm run dev         # servidor de desarrollo
+npm run build       # bundle único en dist/index.html
+npm run typecheck   # tsc --noEmit
+npm run sim:check   # verifica el equilibrio del ecosistema (8 semillas)
+```
 
-- **Pausa / Reiniciar** el terrario.
-- **+ Comida / + Herbívoro / + Depredador** para intervenir.
-- **Clic** en el estanque suelta comida; **pasa el cursor** sobre un ser para ver
-  su energía, edad y genes.
-- Sliders de **velocidad del tiempo** y **crecimiento de plantas**.
-- Una **gráfica de población** muestra en vivo el sube-y-baja de las tres especies.
+## La simulación
 
-## Cómo funciona
+Cada animal percibe su entorno (rejilla espacial), decide (huir, cazar, buscar
+pasto o comida, deambular), gasta energía al moverse y la recupera al comer.
+Con energía suficiente se reproduce y su cría hereda los genes (velocidad, vista,
+tamaño) con pequeñas mutaciones, así los rasgos **evolucionan** entre
+generaciones. Cada especie tiene una **capacidad de carga** (cupo del corral),
+de modo que las tres conviven en vez de excluirse. Un leve efecto rescate evita
+la extinción permanente. El equilibrio está verificado en 8 semillas
+independientes (`npm run sim:check`).
 
-Cada criatura percibe a su alrededor (rejilla espacial para eficiencia) y toma una
-decisión simple: el herbívoro huye si ve un depredador, si no busca la planta más
-cercana, y si no deambula; el depredador persigue al herbívoro más cercano. Comer
-da energía, moverse la gasta. Al superar un umbral se reproducen; al agotarla o
-envejecer, mueren. Un leve **efecto rescate** hace que lleguen nuevos individuos
-cuando una especie queda al borde de la extinción, de modo que el terrario nunca
-muere del todo y puedes dejarlo corriendo indefinidamente.
+## Panel divino
+
+- **Clima** — ☀️ Sol · 🌧️ Lluvia (el pasto crece) · 🏜️ Sequía (el pasto muere).
+- **Poblar** — suelta gallinas, ovejas, vacas o zorros.
+- **Poderes** — ✨ Bendición (todos se sacian y se reproducen), 🦠 Peste
+  (enferma al rebaño), 🌾 Alimentar y ☄️ Meteorito (herramientas de clic).
+- **Clic** en el campo aplica la herramienta activa (esparcir grano o invocar
+  un meteorito).

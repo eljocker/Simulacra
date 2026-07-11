@@ -1,0 +1,30 @@
+export const PAL = {
+  soil: '#6b5138',
+  soilDark: '#5a4430',
+  grassLo: '#7a8f3c',
+  grassHi: '#4f7a2e',
+  grassDry: '#9a8a44',
+  water: '#3e7fa6',
+  waterDeep: '#2f6382',
+  barn: '#a8402f',
+  barnRoof: '#3a2b23',
+  barnWall: '#c25a45',
+  fence: '#7c5a3a',
+  grain: '#e6c34a',
+  night: 'rgba(18,26,54,0.52)',
+  dusk: 'rgba(80,60,90,0.22)',
+};
+
+export const ANIMAL = {
+  chickenBody: '#f6e27a',
+  chickenComb: '#e0483a',
+  chickenBeak: '#f08a2c',
+  sheepWool: '#f3f4f6',
+  sheepFace: '#3a3a42',
+  cowBody: '#eef1f4',
+  cowSpot: '#2b2b30',
+  foxBody: '#e8712f',
+  foxDark: '#c85520',
+  foxTip: '#fbe9d6',
+  eye: '#20160f',
+};
