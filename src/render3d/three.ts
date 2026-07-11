@@ -65,6 +65,7 @@ export class ThreeRenderer implements IRenderer {
   private ground: THREE.Mesh;
   private scenery = new THREE.Group();
   private meshes = {} as Record<SpeciesId, THREE.InstancedMesh>;
+  private foot = {} as Record<SpeciesId, number>; // -min.y of each model: how high to sit it so its feet rest on the ground
   private dummy = new THREE.Object3D();
   private rain: THREE.Points;
   private built = false;
@@ -101,6 +102,8 @@ export class ThreeRenderer implements IRenderer {
       im.frustumCulled = false;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       im.count = 0;
+      im.geometry.computeBoundingBox();
+      this.foot[sp] = -(im.geometry.boundingBox?.min.y ?? 0); // grounding offset
       this.meshes[sp] = im;
       this.scene.add(im);
     });
@@ -262,7 +265,9 @@ export class ThreeRenderer implements IRenderer {
       const i = counts[a.species];
       if (i >= MAX_INST) continue;
       const s = a.genes.size * a.born * 0.085;
-      this.dummy.position.set((a.x - world.w / 2) * SC, s * 4, (a.y - world.h / 2) * SC);
+      // gravity rule: feet rest on the ground plane — foot offset scales with size,
+      // so no animal can ever float or sink regardless of its model or scale.
+      this.dummy.position.set((a.x - world.w / 2) * SC, this.foot[a.species] * s, (a.y - world.h / 2) * SC);
       this.dummy.rotation.set(0, -a.heading, 0);
       this.dummy.scale.setScalar(s);
       this.dummy.updateMatrix();
