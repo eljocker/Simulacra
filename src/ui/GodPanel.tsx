@@ -4,6 +4,18 @@ import type { UIState } from '../engine/store.ts';
 import type { SnapshotRecord } from '../persistence/db.ts';
 import { PopulationChart } from './PopulationChart.tsx';
 
+const TERRAINS = [
+  { n: 'Chico', v: 0.75 },
+  { n: 'Mediano', v: 1.0 },
+  { n: 'Grande', v: 1.4 },
+];
+const DENSITIES = [
+  { n: 'Baja', v: 0.6 },
+  { n: 'Media', v: 1.0 },
+  { n: 'Alta', v: 1.5 },
+];
+const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
+
 export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
   const [collapsed, setCollapsed] = useState(window.innerWidth <= 640);
   const [saves, setSaves] = useState<SnapshotRecord[]>([]);
@@ -55,6 +67,24 @@ export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
         </div>
 
         <div className="group" style={{ marginTop: 15 }}>
+          <div className="glab">🌍 Mundo <span className="ghint">reinicia la granja</span></div>
+          <div className="seg-lab">Tamaño del terreno</div>
+          <div className="seg">
+            {TERRAINS.map((t) => (
+              <button key={t.v} className={`sb${near(ui.terrainSize, t.v) ? ' on' : ''}`}
+                onClick={() => engine.setTerrainSize(t.v)}>{t.n}</button>
+            ))}
+          </div>
+          <div className="seg-lab">Densidad de población</div>
+          <div className="seg">
+            {DENSITIES.map((d) => (
+              <button key={d.v} className={`sb${near(ui.density, d.v) ? ' on' : ''}`}
+                onClick={() => engine.setDensity(d.v)}>{d.n}</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="group">
           <div className="glab">☁️ Clima</div>
           <div className="btnrow c3">
             <button className={`b tall${ui.stats.weather === 'clear' ? ' on' : ''}`} onClick={() => engine.intervene({ kind: 'clear' })}><span className="e">☀️</span>Sol</button>

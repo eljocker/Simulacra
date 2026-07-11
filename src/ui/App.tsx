@@ -3,6 +3,7 @@ import { Engine, type RendererFactory } from '../engine/loop.ts';
 import { HUD } from './HUD.tsx';
 import { GodPanel } from './GodPanel.tsx';
 import { Bitacora } from './Bitacora.tsx';
+import { Ficha } from './Ficha.tsx';
 
 export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,6 +52,7 @@ export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
     const eng = new Engine(canvas, makeRenderer);
     eng.start();
     setEngine(eng);
+    (window as unknown as { simulacra?: Engine }).simulacra = eng; // console handle
     // resume the previous session in the background — never block startup on it
     void eng.restoreLast();
 
@@ -97,6 +99,7 @@ function Connected({ engine }: { engine: Engine }) {
     <>
       <HUD stats={ui.stats} />
       <Bitacora events={ui.events} />
+      {ui.selected && <Ficha engine={engine} selected={ui.selected} events={ui.events} />}
       <GodPanel engine={engine} ui={ui} />
     </>
   );

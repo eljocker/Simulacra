@@ -1,6 +1,15 @@
-import type { LifeEvent, Stats } from '../sim/types.ts';
+import type { Genes, LifeEvent, SpeciesId, Stats } from '../sim/types.ts';
 
 export type HistoryPoint = { chicken: number; sheep: number; cow: number; fox: number; grass: number };
+
+export interface SelectedInfo {
+  id: number;
+  species: SpeciesId;
+  alive: boolean;
+  age?: number;
+  energy?: number;
+  genes?: Genes;
+}
 
 export interface UIState {
   stats: Stats;
@@ -8,6 +17,9 @@ export interface UIState {
   events: LifeEvent[];
   running: boolean;
   speed: number;
+  terrainSize: number;
+  density: number;
+  selected: SelectedInfo | null;
 }
 
 const EMPTY_STATS: Stats = {
@@ -16,7 +28,10 @@ const EMPTY_STATS: Stats = {
 
 // Minimal external store compatible with React's useSyncExternalStore.
 export class Store {
-  private state: UIState = { stats: EMPTY_STATS, history: [], events: [], running: true, speed: 1 };
+  private state: UIState = {
+    stats: EMPTY_STATS, history: [], events: [], running: true, speed: 1,
+    terrainSize: 1, density: 1, selected: null,
+  };
   private listeners = new Set<() => void>();
 
   subscribe = (fn: () => void): (() => void) => {
@@ -31,8 +46,11 @@ export class Store {
     for (const l of this.listeners) l();
   }
 
-  setStats(stats: Stats, history: HistoryPoint[], events: LifeEvent[]): void {
-    this.emit({ stats, history, events });
+  setFrame(stats: Stats, history: HistoryPoint[], events: LifeEvent[], selected: SelectedInfo | null): void {
+    this.emit({ stats, history, events, selected });
+  }
+  setWorldCfg(terrainSize: number, density: number): void {
+    this.emit({ terrainSize, density });
   }
   setRunning(running: boolean): void {
     this.emit({ running });

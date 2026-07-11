@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { World } from '../sim/world.ts';
-import type { SpeciesId } from '../sim/types.ts';
+import type { Effect, SpeciesId } from '../sim/types.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
 import { fbm } from './noise.ts';
 
@@ -87,6 +87,25 @@ function makeCloudTexture(): THREE.Texture {
   return new THREE.CanvasTexture(c);
 }
 
+// a little angel / soul that rises from a death
+function makeAngelTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const gl = g.createRadialGradient(32, 34, 2, 32, 34, 30);
+  gl.addColorStop(0, 'rgba(255,255,240,0.85)');
+  gl.addColorStop(1, 'rgba(255,255,240,0)');
+  g.fillStyle = gl; g.fillRect(0, 0, 64, 64);
+  g.fillStyle = 'rgba(255,255,255,0.96)';
+  g.beginPath(); g.ellipse(20, 37, 10, 7, 0.5, 0, 6.2832); g.fill();
+  g.beginPath(); g.ellipse(44, 37, 10, 7, -0.5, 0, 6.2832); g.fill();
+  g.beginPath(); g.moveTo(32, 31); g.lineTo(41, 53); g.lineTo(23, 53); g.closePath(); g.fill();
+  g.beginPath(); g.arc(32, 28, 7, 0, 6.2832); g.fill();
+  g.strokeStyle = 'rgba(255,214,90,0.95)'; g.lineWidth = 2.4;
+  g.beginPath(); g.ellipse(32, 17, 7, 3, 0, 0, 6.2832); g.stroke();
+  return new THREE.CanvasTexture(c);
+}
+
 export class ThreeRenderer implements IRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -102,6 +121,8 @@ export class ThreeRenderer implements IRenderer {
   private rain: THREE.Points;
   private clouds: THREE.Sprite[] = [];
   private foliage: THREE.Object3D[] = []; // tree crowns, swayed by wind
+  private angelTex = makeAngelTexture();
+  private souls = new Map<Effect, THREE.Sprite>(); // rising souls, keyed by their effect
   private built = false;
   private t = 0; // frame counter for ambient motion (clouds, wind)
 
@@ -122,6 +143,17 @@ export class ThreeRenderer implements IRenderer {
   private drag = false;
   private lx = 0;
   private ly = 0;
+
+  // click-to-inspect
+  private raycaster = new THREE.Raycaster();
+  private ndc = new THREE.Vector2();
+  private pickCb: ((id: number | null) => void) | null = null;
+  private instIds: Record<SpeciesId, number[]> = { chicken: [], sheep: [], cow: [], fox: [] };
+  private moved = 0;
+
+  setPickHandler(cb: (id: number | null) => void): void {
+    this.pickCb = cb;
+  }
 
   constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -148,6 +180,7 @@ export class ThreeRenderer implements IRenderer {
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       im.count = 0;
       im.geometry.computeBoundingBox();
+      im.geometry.computeBoundingSphere(); // needed for raycasting the instances
       this.foot[sp] = -(im.geometry.boundingBox?.min.y ?? 0); // grounding offset
       this.meshes[sp] = im;
       this.scene.add(im);
@@ -203,19 +236,23 @@ export class ThreeRenderer implements IRenderer {
     const c = this.canvas;
     c.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      this.drag = true; this.lx = e.clientX; this.ly = e.clientY;
+      this.drag = true; this.lx = e.clientX; this.ly = e.clientY; this.moved = 0;
       c.setPointerCapture(e.pointerId);
     });
     c.addEventListener('pointermove', (e) => {
       if (!this.drag) return;
-      this.az -= (e.clientX - this.lx) * 0.006;
-      this.pol = clamp(this.pol - (e.clientY - this.ly) * 0.006, 0.22, 1.45);
+      const dx = e.clientX - this.lx, dy = e.clientY - this.ly;
+      this.moved += Math.abs(dx) + Math.abs(dy);
+      this.az -= dx * 0.006;
+      this.pol = clamp(this.pol - dy * 0.006, 0.22, 1.45);
       this.lx = e.clientX; this.ly = e.clientY;
       this.updateCamera();
     });
-    const end = () => { this.drag = false; };
-    c.addEventListener('pointerup', end);
-    c.addEventListener('pointercancel', end);
+    c.addEventListener('pointerup', (e) => {
+      if (this.drag && this.moved < 6) this.pick(e); // a click, not a drag → select
+      this.drag = false;
+    });
+    c.addEventListener('pointercancel', () => { this.drag = false; });
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.camera.zoom = clamp(this.camera.zoom * (e.deltaY < 0 ? 1.12 : 0.89), 0.4, 6);
@@ -236,6 +273,22 @@ export class ThreeRenderer implements IRenderer {
       }
       if (handled) { e.preventDefault(); this.updateCamera(); }
     });
+  }
+
+  private pick(e: PointerEvent): void {
+    if (!this.pickCb) return;
+    const rect = this.canvas.getBoundingClientRect();
+    this.ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const hits = this.raycaster.intersectObjects(Object.values(this.meshes), false);
+    for (const hit of hits) {
+      if (hit.instanceId == null) continue;
+      const sp = (Object.keys(this.meshes) as SpeciesId[]).find((k) => this.meshes[k] === hit.object);
+      const id = sp ? this.instIds[sp][hit.instanceId] : undefined;
+      if (id != null) { this.pickCb(id); return; }
+    }
+    this.pickCb(null); // clicked empty ground → clear selection
   }
 
   private updateCamera(): void {
@@ -380,6 +433,7 @@ export class ThreeRenderer implements IRenderer {
     if (!this.built) this.buildScenery(world);
 
     const counts: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0 };
+    (Object.keys(this.instIds) as SpeciesId[]).forEach((k) => { this.instIds[k].length = 0; });
     for (const a of world.animals) {
       const im = this.meshes[a.species];
       const i = counts[a.species];
@@ -393,6 +447,7 @@ export class ThreeRenderer implements IRenderer {
       this.dummy.scale.setScalar(s);
       this.dummy.updateMatrix();
       im.setMatrixAt(i, this.dummy.matrix);
+      this.instIds[a.species][i] = a.id;
       counts[a.species] = i + 1;
     }
     (Object.keys(this.meshes) as SpeciesId[]).forEach((sp) => {
@@ -443,6 +498,29 @@ export class ThreeRenderer implements IRenderer {
       const ph = f.userData.phase as number;
       f.rotation.z = Math.sin(this.t * 0.03 + ph) * 0.06 * wind;
       f.rotation.x = Math.cos(this.t * 0.025 + ph) * 0.04 * wind;
+    }
+
+    // souls — a little angel rises from each death and fades into the sky
+    for (const [eff, sp] of this.souls) {
+      if (!world.effects.includes(eff)) {
+        this.scene.remove(sp);
+        (sp.material as THREE.SpriteMaterial).dispose();
+        this.souls.delete(eff);
+      }
+    }
+    for (const eff of world.effects) {
+      if (eff.kind !== 'soul') continue;
+      let sp = this.souls.get(eff);
+      if (!sp) {
+        sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.angelTex, transparent: true, depthWrite: false }));
+        this.souls.set(eff, sp);
+        this.scene.add(sp);
+      }
+      const k = eff.t / eff.life; // 0..1
+      const sx = (eff.x - world.w / 2) * SC, sz = (eff.y - world.h / 2) * SC;
+      sp.position.set(sx + Math.sin(eff.t * 3) * 0.5, this.terrainY(sx, sz) + 1 + k * 11, sz);
+      sp.scale.setScalar(1.7 + k * 1.3);
+      (sp.material as THREE.SpriteMaterial).opacity = Math.min(1, k / 0.15) * (1 - k * k);
     }
 
     this.renderer.render(this.scene, this.camera);

@@ -2,14 +2,12 @@ import { World } from '../sim/world.ts';
 import type { Intervention, WorldSnapshot } from '../sim/types.ts';
 import { Renderer } from '../render/renderer.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
-import { Store, type HistoryPoint } from './store.ts';
+import { Store, type HistoryPoint, type SelectedInfo } from './store.ts';
 import { AUTOSAVE_ID, deleteSnapshot, getSnapshot, listSnapshots, putSnapshot, type SnapshotRecord } from '../persistence/db.ts';
 
 export type RendererFactory = (canvas: HTMLCanvasElement) => IRenderer;
 const default2D: RendererFactory = (c) => new Renderer(c);
 
-// fraction of the real day (local time) — drives the sun so it's aligned to the
-// actual hour of day. Independent of the sim speed (which paces the ecosystem).
 function realClockFraction(): number {
   const d = new Date();
   return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000) / 86400;
@@ -17,19 +15,19 @@ function realClockFraction(): number {
 
 const FIXED = 1 / 60;
 const HISTORY_MAX = 200;
-const AUTOSAVE_EVERY = 15; // seconds of real time
-// Global calm factor: 1× on the slider runs the ecosystem at this fraction of
-// real time, for a contemplative pace. Uniform time-scaling — balance-invariant.
-const PACE = 0.6;
+const AUTOSAVE_EVERY = 15;
+const PACE = 0.6; // global calm factor: 1× runs the ecosystem at this fraction of real time
+const BASE_AREA = 1152 * 720; // reference terrain area for density = 1
 
-// Owns the world + renderer and drives them with a fixed-timestep accumulator.
-// Publishes lightweight stats to the Store and persists state to IndexedDB.
 export class Engine {
   world: World;
   renderer: IRenderer;
   store = new Store();
   private running = true;
   private speed = 1;
+  private terrainSize = 1;
+  private density = 1;
+  private selected: { id: number; species: import('../sim/types.ts').SpeciesId } | null = null;
   private last = 0;
   private raf = 0;
   private statAcc = 0;
@@ -38,15 +36,45 @@ export class Engine {
   private history: HistoryPoint[] = [];
 
   constructor(private canvas: HTMLCanvasElement, makeRenderer: RendererFactory = default2D) {
-    const { w, h } = this.canvasSize();
+    const { w, h } = this.baseDims();
     this.world = new World(w, h, (Math.random() * 1e9) | 0);
+    this.world.capScale = this.capScale(w, h);
     this.world.seed();
     this.renderer = makeRenderer(canvas);
-    this.renderer.resize(w, h);
+    this.renderer.resize(this.canvasSize().w, this.canvasSize().h);
+    this.renderer.setPickHandler?.((id) => this.select(id));
+    this.store.setWorldCfg(this.terrainSize, this.density);
   }
 
   private canvasSize() {
     return { w: this.canvas.clientWidth || 1280, h: this.canvas.clientHeight || 720 };
+  }
+  private baseDims() {
+    const { w, h } = this.canvasSize();
+    const asp = w / h;
+    return { w: 720 * asp * this.terrainSize, h: 720 * this.terrainSize };
+  }
+  private capScale(w: number, h: number): number {
+    return this.density * (w * h) / BASE_AREA;
+  }
+
+  private selectedInfo(): SelectedInfo | null {
+    if (!this.selected) return null;
+    const a = this.world.animals.find((x) => x.id === this.selected!.id);
+    if (a) return { id: a.id, species: a.species, alive: true, age: a.age, energy: a.energy, genes: { ...a.genes } };
+    return { id: this.selected.id, species: this.selected.species, alive: false };
+  }
+  private pushStats(): void {
+    this.store.setFrame(this.world.stats(), this.history, this.world.events, this.selectedInfo());
+  }
+
+  select(id: number | null): void {
+    if (id == null) { this.selected = null; }
+    else {
+      const a = this.world.animals.find((x) => x.id === id);
+      this.selected = a ? { id: a.id, species: a.species } : null;
+    }
+    this.pushStats();
   }
 
   start(): void {
@@ -55,7 +83,7 @@ export class Engine {
       let real = (now - this.last) / 1000;
       this.last = now;
       if (real > 0.1) real = 0.1;
-      this.world.clock = realClockFraction(); // sun follows the real hour of day
+      this.world.clock = realClockFraction();
       if (this.running) {
         let dt = real * this.speed * PACE;
         while (dt > 0) {
@@ -67,9 +95,9 @@ export class Engine {
         this.histAcc += real * this.speed;
       }
       this.renderer.draw(this.world);
-      if (this.statAcc >= 0.25) {
+      if (this.statAcc >= 0.2) {
         this.statAcc = 0;
-        this.store.setStats(this.world.stats(), this.history, this.world.events);
+        this.pushStats();
       }
       if (this.histAcc >= 1) {
         this.histAcc = 0;
@@ -90,28 +118,34 @@ export class Engine {
   stop(): void {
     cancelAnimationFrame(this.raf);
   }
-
   resize(): void {
     const { w, h } = this.canvasSize();
     this.renderer.resize(w, h);
   }
+  setRunning(v: boolean): void { this.running = v; this.store.setRunning(v); }
+  toggle(): void { this.setRunning(!this.running); }
+  setSpeed(v: number): void { this.speed = v; this.store.setSpeed(v); }
 
-  setRunning(v: boolean): void {
-    this.running = v;
-    this.store.setRunning(v);
+  private reconfigure(): void {
+    const { w, h } = this.baseDims();
+    this.world.resize(w, h);
+    this.world.capScale = this.capScale(w, h);
+    this.world.seed();
+    this.history = [];
+    this.selected = null;
+    this.renderer.reset?.();
+    this.store.setWorldCfg(this.terrainSize, this.density);
+    this.pushStats();
   }
-  toggle(): void {
-    this.setRunning(!this.running);
-  }
-  setSpeed(v: number): void {
-    this.speed = v;
-    this.store.setSpeed(v);
-  }
+  setTerrainSize(v: number): void { this.terrainSize = v; this.reconfigure(); }
+  setDensity(v: number): void { this.density = v; this.reconfigure(); }
+
   reset(): void {
     this.world.seed();
     this.history = [];
+    this.selected = null;
     this.renderer.reset?.();
-    this.store.setStats(this.world.stats(), this.history, this.world.events);
+    this.pushStats();
   }
   intervene(iv: Intervention): void {
     this.world.applyIntervention(iv);
@@ -120,42 +154,35 @@ export class Engine {
   // ---- persistence ----
   private applySnapshot(snap: WorldSnapshot): void {
     this.world.load(snap);
+    this.terrainSize = Math.max(this.terrainSize, 1); // keep UI factor; caps come from snapshot
     this.history = [];
+    this.selected = null;
     this.renderer.reset?.();
-    this.store.setStats(this.world.stats(), this.history, this.world.events);
+    this.pushStats();
   }
-
   async saveAuto(): Promise<void> {
     try {
       await putSnapshot({ id: AUTOSAVE_ID, name: 'Sesión anterior', createdAt: Date.now(), day: this.world.day, auto: true, snapshot: this.world.serialize() });
-    } catch { /* storage unavailable — keep running */ }
+    } catch { /* storage unavailable */ }
   }
-
   async restoreLast(): Promise<boolean> {
     try {
       const rec = await getSnapshot(AUTOSAVE_ID);
-      if (rec && rec.snapshot?.v === 1) {
-        this.applySnapshot(rec.snapshot);
-        return true;
-      }
+      if (rec && rec.snapshot?.v === 1) { this.applySnapshot(rec.snapshot); return true; }
     } catch { /* ignore */ }
     return false;
   }
-
   async saveNamed(name: string): Promise<void> {
     const id = (crypto.randomUUID?.() ?? String(Date.now() + Math.random()));
     await putSnapshot({ id, name, createdAt: Date.now(), day: this.world.day, snapshot: this.world.serialize() });
   }
-
   async listSaved(): Promise<SnapshotRecord[]> {
     try { return await listSnapshots(); } catch { return []; }
   }
-
   async loadSaved(id: string): Promise<void> {
     const rec = await getSnapshot(id);
     if (rec && rec.snapshot?.v === 1) this.applySnapshot(rec.snapshot);
   }
-
   async deleteSaved(id: string): Promise<void> {
     await deleteSnapshot(id);
   }

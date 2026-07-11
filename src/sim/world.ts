@@ -22,6 +22,7 @@ export class World {
   day = 1;
   born = 0;
   died = 0;
+  capScale = 1; // population scaling from terrain size × density (set by the engine)
   private nextId = 1;
   private evSeq = 0;
   private rescueTimer = 0;
@@ -64,7 +65,8 @@ export class World {
     this.born = 0;
     this.died = 0;
     const start: [SpeciesId, number][] = [['chicken', 14], ['sheep', 8], ['cow', 4], ['fox', 3]];
-    for (const [sp, n] of start) {
+    for (const [sp, n0] of start) {
+      const n = Math.max(1, Math.round(n0 * this.capScale));
       for (let i = 0; i < n; i++) {
         const a = this.make(sp, this.rng.range(40, this.w - 40), this.rng.range(40, this.h - 40));
         a.born = 1;
@@ -189,14 +191,14 @@ export class World {
           this.died++;
           a.energy += def.catchEnergy;
           a.flash = 0.3;
-          this.effects.push({ x: prey.x, y: prey.y, t: 0, life: 0.5, kind: 'death', color: SPECIES[prey.species].color });
+          this.effects.push({ x: prey.x, y: prey.y, t: 0, life: 2.6, kind: 'soul', color: SPECIES[prey.species].color });
           this.logEvent({ kind: 'death', species: prey.species, id: prey.id, cause: 'cazado', by: a.id, age: prey.age });
         }
       }
 
       // reproduction: a well-fed, rested adult breeds (offspring inherits
       // mutated genes, so traits drift across generations)
-      if (a.energy > def.reproduceAt && a.cooldown <= 0 && a.age > def.maxAge * 0.1 && pop[a.species] < def.cap) {
+      if (a.energy > def.reproduceAt && a.cooldown <= 0 && a.age > def.maxAge * 0.1 && pop[a.species] < def.cap * this.capScale) {
         a.energy *= def.reproCost;
         a.cooldown = def.cooldown;
         const child = this.make(a.species, a.x + this.rng.range(-10, 10), a.y + this.rng.range(-10, 10), this.childGenes(a));
@@ -215,7 +217,7 @@ export class World {
         this.died++;
         const cause = a.age > def.maxAge ? 'vejez' : a.sick > 0 ? 'peste' : 'hambre';
         this.logEvent({ kind: 'death', species: a.species, id: a.id, cause, age: a.age });
-        this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.5, kind: 'death', color: def.color });
+        this.effects.push({ x: a.x, y: a.y, t: 0, life: 2.6, kind: 'soul', color: def.color });
       }
     }
 
@@ -304,7 +306,7 @@ export class World {
           if ((a.x - mx) ** 2 + (a.y - my) ** 2 < R * R) {
             this.died++;
             this.logEvent({ kind: 'death', species: a.species, id: a.id, cause: 'meteorito', age: a.age });
-            this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.5, kind: 'death', color: SPECIES[a.species].color });
+            this.effects.push({ x: a.x, y: a.y, t: 0, life: 2.6, kind: 'soul', color: SPECIES[a.species].color });
           } else survivors.push(a);
         }
         this.animals = survivors;
@@ -348,6 +350,7 @@ export class World {
       rng: this.rng.getState(),
       nextId: this.nextId,
       clock: this.clock, day: this.day, born: this.born, died: this.died,
+      capScale: this.capScale,
       weather: this.weather, weatherTimer: this.weatherTimer,
       animals: this.animals.map((a) => ({ ...a, genes: { ...a.genes } })),
       grain: this.grain.map((g) => ({ ...g })),
@@ -362,6 +365,7 @@ export class World {
     this.rng.setState(s.rng);
     this.nextId = s.nextId;
     this.clock = s.clock; this.day = s.day; this.born = s.born; this.died = s.died;
+    this.capScale = s.capScale ?? 1;
     this.weather = s.weather; this.weatherTimer = s.weatherTimer;
     this.animals = s.animals.map((a) => ({ ...a, genes: { ...a.genes } }));
     this.grain = s.grain.map((g) => ({ ...g }));

@@ -73,6 +73,7 @@ export interface WorldSnapshot {
   day: number;
   born: number;
   died: number;
+  capScale: number;
   weather: Weather;
   weatherTimer: number;
   animals: Animal[];
@@ -93,6 +94,6 @@ export interface Effect {
   y: number;
   t: number;
   life: number;
-  kind: 'birth' | 'death' | 'meteor' | 'heart';
+  kind: 'birth' | 'death' | 'meteor' | 'heart' | 'soul';
   color: string;
 }

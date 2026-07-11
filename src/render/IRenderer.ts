@@ -7,5 +7,6 @@ export interface IRenderer {
   resize(w: number, h: number): void;
   draw(world: World): void;
   reset?(): void; // rebuild scenery after a world reset/snapshot load
+  setPickHandler?(cb: (id: number | null) => void): void; // click-to-select an animal
   dispose?(): void;
 }
