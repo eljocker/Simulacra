@@ -75,4 +75,23 @@ export class GrassField {
     for (let i = 0; i < this.density.length; i++) s += this.density[i];
     return (s / this.density.length) * 100;
   }
+
+  toJSON(): GrassSnapshot {
+    // round to 3 decimals to keep snapshots compact
+    return { cell: this.cell, cols: this.cols, rows: this.rows, density: Array.from(this.density, (v) => Math.round(v * 1000) / 1000) };
+  }
+
+  load(s: GrassSnapshot): void {
+    this.cell = s.cell;
+    this.cols = s.cols;
+    this.rows = s.rows;
+    this.density = Float32Array.from(s.density);
+  }
+}
+
+export interface GrassSnapshot {
+  cell: number;
+  cols: number;
+  rows: number;
+  density: number[];
 }

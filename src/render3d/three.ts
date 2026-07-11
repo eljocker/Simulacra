@@ -7,11 +7,9 @@ import type { IRenderer } from '../render/IRenderer.ts';
 const SC = 0.06; // world px -> scene units
 const MAX_INST = 280;
 
-// ---- low-poly geometry per species (merged into one BufferGeometry so it can
-// ---- be instanced; a single draw call per species) ----
-// All parts are made non-indexed before merging: it keeps mergeGeometries happy
-// even when mixing indexed (box/sphere) and non-indexed (icosahedron) sources,
-// and the faceted result reads nicely as low-poly under flat shading.
+// ---- low-poly geometry per species (merged so it can be instanced: one draw
+// ---- call per species). Parts are non-indexed so mixing indexed and
+// ---- non-indexed sources merges cleanly and flat shading looks faceted. ----
 function merge(...parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return mergeGeometries(parts.map((p) => p.toNonIndexed()))!;
 }
@@ -46,13 +44,8 @@ function foxGeo(): THREE.BufferGeometry {
     new THREE.ConeGeometry(0.22, 0.7, 6).rotateZ(Math.PI / 2).translate(-0.7, 0.1, 0),
   );
 }
-
-const GEO: Record<SpeciesId, () => THREE.BufferGeometry> = {
-  chicken: chickenGeo, sheep: sheepGeo, cow: cowGeo, fox: foxGeo,
-};
-const COLOR: Record<SpeciesId, number> = {
-  chicken: 0xf4d35e, sheep: 0xeef0f2, cow: 0xdadfe3, fox: 0xe8712f,
-};
+const GEO: Record<SpeciesId, () => THREE.BufferGeometry> = { chicken: chickenGeo, sheep: sheepGeo, cow: cowGeo, fox: foxGeo };
+const COLOR: Record<SpeciesId, number> = { chicken: 0xf4d35e, sheep: 0xeef0f2, cow: 0xdadfe3, fox: 0xe8712f };
 
 function nightFactor(clock: number): number {
   if (clock > 0.8) return Math.min(1, (clock - 0.8) / 0.08);
@@ -60,96 +53,167 @@ function nightFactor(clock: number): number {
   return 0;
 }
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 
 export class ThreeRenderer implements IRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  private camera: THREE.PerspectiveCamera;
+  private camera: THREE.OrthographicCamera;
   private hemi: THREE.HemisphereLight;
   private sun: THREE.DirectionalLight;
   private sunBall: THREE.Mesh;
   private ground: THREE.Mesh;
+  private scenery = new THREE.Group();
   private meshes = {} as Record<SpeciesId, THREE.InstancedMesh>;
   private dummy = new THREE.Object3D();
   private rain: THREE.Points;
-  private orbit = 0;
+  private built = false;
 
-  constructor(canvas: HTMLCanvasElement) {
+  // fixed isometric camera rig — no auto motion; user nudges with mouse/keys
+  private az = Math.PI * 0.25;
+  private pol = 0.955; // ~isometric elevation (~35° above ground)
+  private target = new THREE.Vector3();
+  private aspect = 1;
+  private viewHalf = 30; // half of the vertical world extent framed by the ortho camera
+  private camDist = 240;
+  private drag = false;
+  private lx = 0;
+  private ly = 0;
+
+  constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    this.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 1, 2000);
 
-    this.camera = new THREE.PerspectiveCamera(46, 1, 0.1, 400);
-
-    this.hemi = new THREE.HemisphereLight(0xbfd8ff, 0x5a7a3a, 0.9);
+    this.hemi = new THREE.HemisphereLight(0xbfd8ff, 0x5a7a3a, 0.95);
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight(0xfff2d6, 1.4);
     this.scene.add(this.sun, this.sun.target);
-    this.sunBall = new THREE.Mesh(
-      new THREE.SphereGeometry(2, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0xfff0c0 }),
-    );
+    this.sunBall = new THREE.Mesh(new THREE.SphereGeometry(2, 16, 16), new THREE.MeshBasicMaterial({ color: 0xfff0c0 }));
     this.scene.add(this.sunBall);
 
-    // ground
-    this.ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(10, 10, 1, 1),
-      new THREE.MeshStandardMaterial({ color: 0x5f8f3e, roughness: 1 }),
-    );
+    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0x5f8f3e, roughness: 1 }));
     this.ground.rotation.x = -Math.PI / 2;
-    this.ground.receiveShadow = true;
-    this.scene.add(this.ground);
+    this.scene.add(this.ground, this.scenery);
 
-    // instanced animals
     (Object.keys(GEO) as SpeciesId[]).forEach((sp) => {
       const mat = new THREE.MeshStandardMaterial({ color: COLOR[sp], flatShading: true, roughness: 0.85 });
       const im = new THREE.InstancedMesh(GEO[sp](), mat, MAX_INST);
-      im.castShadow = true;
-      im.frustumCulled = false; // count varies each frame; skip bounding-sphere culling
+      im.frustumCulled = false;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       im.count = 0;
       this.meshes[sp] = im;
       this.scene.add(im);
     });
 
-    // rain particles (toggled by weather)
     const rainGeo = new THREE.BufferGeometry();
     const N = 1400;
     const pos = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 80;
-      pos[i * 3 + 1] = Math.random() * 40;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 80;
+      pos[i * 3] = (Math.random() - 0.5) * 90;
+      pos[i * 3 + 1] = Math.random() * 45;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * 90;
     }
     rainGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     this.rain = new THREE.Points(rainGeo, new THREE.PointsMaterial({ color: 0xbcd6ef, size: 0.18, transparent: true, opacity: 0.6 }));
     this.rain.frustumCulled = false;
     this.rain.visible = false;
     this.scene.add(this.rain);
+
+    this.attachControls();
   }
 
-  private built = false;
+  // ---- camera controls: drag to rotate, wheel to zoom, arrows/±to nudge ----
+  private attachControls(): void {
+    const c = this.canvas;
+    c.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      this.drag = true; this.lx = e.clientX; this.ly = e.clientY;
+      c.setPointerCapture(e.pointerId);
+    });
+    c.addEventListener('pointermove', (e) => {
+      if (!this.drag) return;
+      this.az -= (e.clientX - this.lx) * 0.006;
+      this.pol = clamp(this.pol - (e.clientY - this.ly) * 0.006, 0.22, 1.45);
+      this.lx = e.clientX; this.ly = e.clientY;
+      this.updateCamera();
+    });
+    const end = () => { this.drag = false; };
+    c.addEventListener('pointerup', end);
+    c.addEventListener('pointercancel', end);
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      this.camera.zoom = clamp(this.camera.zoom * (e.deltaY < 0 ? 1.12 : 0.89), 0.4, 6);
+      this.camera.updateProjectionMatrix();
+    }, { passive: false });
+    window.addEventListener('keydown', (e) => {
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+      let handled = true;
+      switch (e.key) {
+        case 'ArrowLeft': this.az -= 0.09; break;
+        case 'ArrowRight': this.az += 0.09; break;
+        case 'ArrowUp': this.pol = clamp(this.pol - 0.06, 0.22, 1.45); break;
+        case 'ArrowDown': this.pol = clamp(this.pol + 0.06, 0.22, 1.45); break;
+        case '+': case '=': this.camera.zoom = clamp(this.camera.zoom * 1.12, 0.4, 6); this.camera.updateProjectionMatrix(); break;
+        case '-': case '_': this.camera.zoom = clamp(this.camera.zoom * 0.89, 0.4, 6); this.camera.updateProjectionMatrix(); break;
+        default: handled = false;
+      }
+      if (handled) { e.preventDefault(); this.updateCamera(); }
+    });
+  }
+
+  private updateCamera(): void {
+    const dir = new THREE.Vector3(
+      Math.sin(this.pol) * Math.sin(this.az),
+      Math.cos(this.pol),
+      Math.sin(this.pol) * Math.cos(this.az),
+    );
+    this.camera.position.copy(this.target).addScaledVector(dir, this.camDist);
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(this.target);
+  }
+
+  private updateFrustum(): void {
+    const half = this.viewHalf;
+    this.camera.left = -half * this.aspect;
+    this.camera.right = half * this.aspect;
+    this.camera.top = half;
+    this.camera.bottom = -half;
+    this.camera.near = 1;
+    this.camera.far = this.camDist * 2 + 400;
+    this.camera.updateProjectionMatrix();
+  }
+
   private buildScenery(world: World): void {
-    // called once we know the world size: size ground + place props/trees
+    // clear previous scenery (dispose so repeated loads don't leak)
+    for (const o of this.scenery.children) {
+      o.traverse((n) => {
+        const m = n as THREE.Mesh;
+        if (m.geometry) m.geometry.dispose();
+      });
+    }
+    this.scenery.clear();
+
     const gw = world.w * SC, gh = world.h * SC;
     this.ground.geometry.dispose();
-    this.ground.geometry = new THREE.PlaneGeometry(gw, gh, 1, 1);
-    this.scene.fog = new THREE.Fog(0x9fc0e0, gw * 1.2, gw * 3.2);
+    this.ground.geometry = new THREE.PlaneGeometry(gw, gh);
 
     const toScene = (x: number, y: number) => new THREE.Vector3((x - world.w / 2) * SC, 0, (y - world.h / 2) * SC);
 
     // barn
     const barn = new THREE.Group();
     const walls = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.8, 2.4), new THREE.MeshStandardMaterial({ color: 0xc2503c, flatShading: true }));
-    walls.position.y = 0.9; walls.castShadow = true; walls.receiveShadow = true;
+    walls.position.y = 0.9;
     const roof = new THREE.Mesh(new THREE.ConeGeometry(2.5, 1.4, 4), new THREE.MeshStandardMaterial({ color: 0x3a2b23, flatShading: true }));
-    roof.position.y = 2.5; roof.rotation.y = Math.PI / 4; roof.castShadow = true;
+    roof.position.y = 2.5; roof.rotation.y = Math.PI / 4;
     barn.add(walls, roof);
     barn.position.copy(toScene(world.w * 0.52 + 40, 90));
-    this.scene.add(barn);
+    this.scenery.add(barn);
 
     // pond
     const pond = new THREE.Mesh(new THREE.CircleGeometry(gw * 0.09, 24), new THREE.MeshStandardMaterial({ color: 0x3e7fa6, roughness: 0.3, metalness: 0.1 }));
     pond.rotation.x = -Math.PI / 2; pond.position.copy(toScene(world.w * 0.82, world.h * 0.8)); pond.position.y = 0.02;
-    this.scene.add(pond);
+    this.scenery.add(pond);
 
     // trees — deterministic scatter (no RNG, keeps sim determinism intact)
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, flatShading: true });
@@ -161,38 +225,37 @@ export class ThreeRenderer implements IRenderer {
       const y = (Math.abs(fy) * 0.8 + 0.1) * world.h;
       const t = new THREE.Group();
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), trunkMat);
-      trunk.position.y = 0.6; trunk.castShadow = true;
+      trunk.position.y = 0.6;
       const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 0), leafMat);
-      leaves.position.y = 1.7; leaves.castShadow = true;
-      const s = 0.8 + Math.abs(fx) * 0.8;
-      t.scale.setScalar(s);
+      leaves.position.y = 1.7;
+      t.scale.setScalar(0.8 + Math.abs(fx) * 0.8);
       t.add(trunk, leaves);
       t.position.copy(toScene(x, y));
-      this.scene.add(t);
+      this.scenery.add(t);
     }
 
-    // camera framing — lower, more cinematic angle
-    const half = Math.max(gw, gh) / 2;
-    this.camDist = half * 1.85;
-    this.camHeight = half * 0.8;
+    // frame the whole field (iso diamond spans ~gw+gh); user zooms from there
+    this.viewHalf = (gw + gh) * 0.42;
+    this.updateFrustum();
+    this.updateCamera();
     this.built = true;
   }
 
-  private camDist = 20;
-  private camHeight = 14;
+  reset(): void {
+    this.built = false; // next draw rebuilds scenery for the (possibly new) world size
+  }
 
   resize(w: number, h: number): void {
+    this.aspect = w / h;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.updateFrustum();
   }
 
   draw(world: World): void {
     if (!this.built) this.buildScenery(world);
 
-    // instance transforms
     const counts: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0 };
     for (const a of world.animals) {
       const im = this.meshes[a.species];
@@ -217,14 +280,13 @@ export class ThreeRenderer implements IRenderer {
     const sky = new THREE.Color(lerp(0.49, 0.04, n), lerp(0.68, 0.06, n), lerp(0.9, 0.16, n));
     this.scene.background = sky;
     if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(sky);
-    this.hemi.intensity = lerp(0.95, 0.25, n);
+    this.hemi.intensity = lerp(0.98, 0.25, n);
     this.sun.intensity = lerp(1.5, 0.18, n);
     this.sun.color.setRGB(lerp(1, 0.5, n), lerp(0.95, 0.6, n), lerp(0.84, 0.9, n));
-    // sun arc across the sky by clock
     const ang = world.clock * Math.PI * 2 - Math.PI / 2;
-    const R = this.camDist * 1.4;
-    this.sun.position.set(Math.cos(ang) * R, Math.sin(ang) * R * 0.9 + 3, R * 0.35);
-    this.sunBall.position.copy(this.sun.position).multiplyScalar(0.6);
+    const R = this.camDist;
+    this.sun.position.set(Math.cos(ang) * R * 0.6, Math.sin(ang) * R * 0.55 + 4, R * 0.3);
+    this.sunBall.position.copy(this.sun.position).multiplyScalar(0.5);
     (this.sunBall.material as THREE.MeshBasicMaterial).color.setRGB(lerp(1, 0.7, n), lerp(0.94, 0.75, n), lerp(0.75, 0.95, n));
 
     // weather
@@ -232,17 +294,12 @@ export class ThreeRenderer implements IRenderer {
     if (this.rain.visible) {
       const p = this.rain.geometry.getAttribute('position') as THREE.BufferAttribute;
       for (let i = 0; i < p.count; i++) {
-        let y = p.getY(i) - 0.8;
-        if (y < 0) y = 40;
+        let y = p.getY(i) - 0.9;
+        if (y < 0) y = 45;
         p.setY(i, y);
       }
       p.needsUpdate = true;
     }
-
-    // gentle ambient orbit — the "living painting" camera
-    this.orbit += 0.0009;
-    this.camera.position.set(Math.sin(this.orbit) * this.camDist, this.camHeight, Math.cos(this.orbit) * this.camDist);
-    this.camera.lookAt(0, 0, 0);
 
     this.renderer.render(this.scene, this.camera);
   }

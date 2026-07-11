@@ -1,10 +1,27 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Engine } from '../engine/loop.ts';
 import type { UIState } from '../engine/store.ts';
+import type { SnapshotRecord } from '../persistence/db.ts';
 import { PopulationChart } from './PopulationChart.tsx';
 
 export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
   const [collapsed, setCollapsed] = useState(window.innerWidth <= 640);
+  const [saves, setSaves] = useState<SnapshotRecord[]>([]);
+
+  const refresh = useCallback(() => {
+    void engine.listSaved().then(setSaves);
+  }, [engine]);
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const save = async () => {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    await engine.saveNamed(`Día ${ui.stats.day} · ${hh}:${mm}`);
+    refresh();
+  };
+  const load = async (id: string) => { await engine.loadSaved(id); };
+  const del = async (id: string) => { await engine.deleteSaved(id); refresh(); };
 
   return (
     <section className={`dock${collapsed ? ' collapsed' : ''}`}>
@@ -27,9 +44,7 @@ export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
         </div>
 
         <div className="transport">
-          <button className="b" onClick={() => engine.toggle()}>
-            {ui.running ? '❚❚ Pausa' : '▶ Reanudar'}
-          </button>
+          <button className="b" onClick={() => engine.toggle()}>{ui.running ? '❚❚ Pausa' : '▶ Reanudar'}</button>
           <button className="b" onClick={() => engine.reset()}>↺ Reiniciar</button>
         </div>
         <div className="speed">
@@ -65,9 +80,27 @@ export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
             <button className="b" onClick={() => engine.intervene({ kind: 'plague' })}><span className="e">🦠</span>Peste</button>
           </div>
           <div className="btnrow c2">
-            <button className={`b${ui.tool === 'feed' ? ' on' : ''}`} onClick={() => engine.setTool('feed')}><span className="e">🌾</span>Alimentar</button>
-            <button className={`b warn${ui.tool === 'meteor' ? ' on' : ''}`} onClick={() => engine.setTool('meteor')}><span className="e">☄️</span>Meteorito</button>
+            <button className="b" onClick={() => engine.intervene({ kind: 'feed' })}><span className="e">🌾</span>Alimentar</button>
+            <button className="b warn" onClick={() => engine.intervene({ kind: 'meteor' })}><span className="e">☄️</span>Meteorito</button>
           </div>
+        </div>
+
+        <div className="group" style={{ marginBottom: 4 }}>
+          <div className="glab">💾 Memoria</div>
+          <button className="b wide" style={{ marginBottom: 8 }} onClick={save}><span className="e">📸</span>Guardar snapshot</button>
+          {saves.length === 0
+            ? <div className="saves-empty">Aún no guardaste ninguna granja. Tu sesión se restaura sola al volver.</div>
+            : (
+              <div className="saves">
+                {saves.map((s) => (
+                  <div className="save-row" key={s.id}>
+                    <span className="save-name" title={s.name}>{s.name}</span>
+                    <button className="mini" title="Cargar" onClick={() => load(s.id)}>Cargar</button>
+                    <button className="mini danger" title="Borrar" onClick={() => del(s.id)}>✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
       </div>
     </section>

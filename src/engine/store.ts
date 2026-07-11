@@ -1,6 +1,5 @@
 import type { Stats } from '../sim/types.ts';
 
-export type Tool = 'feed' | 'meteor';
 export type HistoryPoint = { chicken: number; sheep: number; cow: number; fox: number; grass: number };
 
 export interface UIState {
@@ -8,7 +7,6 @@ export interface UIState {
   history: HistoryPoint[];
   running: boolean;
   speed: number;
-  tool: Tool;
 }
 
 const EMPTY_STATS: Stats = {
@@ -17,7 +15,7 @@ const EMPTY_STATS: Stats = {
 
 // Minimal external store compatible with React's useSyncExternalStore.
 export class Store {
-  private state: UIState = { stats: EMPTY_STATS, history: [], running: true, speed: 1, tool: 'feed' };
+  private state: UIState = { stats: EMPTY_STATS, history: [], running: true, speed: 1 };
   private listeners = new Set<() => void>();
 
   subscribe = (fn: () => void): (() => void) => {
@@ -40,8 +38,5 @@ export class Store {
   }
   setSpeed(speed: number): void {
     this.emit({ speed });
-  }
-  setTool(tool: Tool): void {
-    this.emit({ tool });
   }
 }

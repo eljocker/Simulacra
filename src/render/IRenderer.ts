@@ -6,5 +6,6 @@ import type { World } from '../sim/world.ts';
 export interface IRenderer {
   resize(w: number, h: number): void;
   draw(world: World): void;
+  reset?(): void; // rebuild scenery after a world reset/snapshot load
   dispose?(): void;
 }

@@ -45,8 +45,25 @@ export type Intervention =
   | { kind: 'spawn'; species: SpeciesId; x?: number; y?: number; n?: number }
   | { kind: 'blessing' }
   | { kind: 'plague' }
-  | { kind: 'meteor'; x: number; y: number }
-  | { kind: 'feed'; x: number; y: number };
+  | { kind: 'meteor'; x?: number; y?: number }
+  | { kind: 'feed'; x?: number; y?: number };
+
+export interface WorldSnapshot {
+  v: 1;
+  w: number;
+  h: number;
+  rng: number;
+  nextId: number;
+  clock: number;
+  day: number;
+  born: number;
+  died: number;
+  weather: Weather;
+  weatherTimer: number;
+  animals: Animal[];
+  grain: Grain[];
+  grass: import('./grass.ts').GrassSnapshot;
+}
 
 export interface Grain {
   x: number;

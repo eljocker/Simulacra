@@ -13,43 +13,37 @@ export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
     const eng = new Engine(canvas, makeRenderer);
     eng.start();
     setEngine(eng);
+    // resume the previous session in the background — never block startup on it
+    void eng.restoreLast();
 
     const onResize = () => eng.resize();
+    const onHide = () => { if (document.visibilityState === 'hidden') void eng.saveAuto(); };
     window.addEventListener('resize', onResize);
+    window.addEventListener('pagehide', () => void eng.saveAuto());
+    document.addEventListener('visibilitychange', onHide);
     return () => {
       window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onHide);
+      void eng.saveAuto();
       eng.stop();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!engine) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    engine.click(e.clientX - rect.left, e.clientY - rect.top);
-  };
 
   return (
     <>
-      <canvas
-        ref={canvasRef}
-        className={`field${engine && engineTool(engine) === 'feed' ? ' tool-feed' : ''}`}
-        onPointerDown={onPointerDown}
-      />
+      <canvas ref={canvasRef} className="field" />
       <header className="masthead">
         <div className="eyebrow">Simulacra · La Granja</div>
         <h1>Una granja que <em>vive sola</em></h1>
-        <p className="dek">Gallinas, ovejas y vacas pastan; los zorros acechan. Todo sigue su curso… hasta que intervienes tú. Trae la lluvia, desata una peste o siembra el caos con un meteorito.</p>
+        <p className="dek">Gallinas, ovejas y vacas pastan; los zorros acechan. Un cuadro vivo en 3D que evoluciona solo — y en el que puedes intervenir como un dios.</p>
       </header>
       {engine && <Connected engine={engine} />}
       <div className="toolhint">
-        <b>Clic</b> en el campo para usar la herramienta activa · abre el <b>Panel divino</b> para intervenir
+        <b>Arrastrá</b> para girar la vista · <b>rueda</b> para zoom · <b>flechas</b> para ajustar
       </div>
     </>
   );
-}
-
-function engineTool(engine: Engine): string {
-  return engine.store.getSnapshot().tool;
 }
 
 function Connected({ engine }: { engine: Engine }) {

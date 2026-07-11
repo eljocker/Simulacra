@@ -1,4 +1,4 @@
-import type { Animal, Effect, Grain, Intervention, SpeciesId, Stats, Weather } from './types.ts';
+import type { Animal, Effect, Grain, Intervention, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
 import { SPECIES, HERBIVORES } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
@@ -271,19 +271,21 @@ export class World {
         break;
       }
       case 'meteor': {
+        const mx = iv.x ?? this.rng.range(60, this.w - 60);
+        const my = iv.y ?? this.rng.range(60, this.h - 60);
         const R = 120;
         for (const a of this.animals) {
-          if ((a.x - iv.x) ** 2 + (a.y - iv.y) ** 2 < R * R) {
-            a.energy = -1;
-          }
+          if ((a.x - mx) ** 2 + (a.y - my) ** 2 < R * R) a.energy = -1;
         }
-        this.grass.scorch(iv.x, iv.y, R);
-        this.effects.push({ x: iv.x, y: iv.y, t: 0, life: 0.6, kind: 'meteor', color: '#ff8a3d' });
+        this.grass.scorch(mx, my, R);
+        this.effects.push({ x: mx, y: my, t: 0, life: 0.6, kind: 'meteor', color: '#ff8a3d' });
         break;
       }
       case 'feed': {
+        const fx = iv.x ?? this.rng.range(40, this.w - 40);
+        const fy = iv.y ?? this.rng.range(40, this.h - 40);
         for (let i = 0; i < 6; i++) {
-          this.grain.push({ x: iv.x + this.rng.range(-26, 26), y: iv.y + this.rng.range(-26, 26), amount: this.rng.range(30, 55) });
+          this.grain.push({ x: fx + this.rng.range(-26, 26), y: fy + this.rng.range(-26, 26), amount: this.rng.range(30, 55) });
         }
         break;
       }
@@ -303,5 +305,33 @@ export class World {
       born: this.born,
       died: this.died,
     };
+  }
+
+  // ---- serialization: capture / restore the entire simulation state ----
+  serialize(): WorldSnapshot {
+    return {
+      v: 1,
+      w: this.w, h: this.h,
+      rng: this.rng.getState(),
+      nextId: this.nextId,
+      clock: this.clock, day: this.day, born: this.born, died: this.died,
+      weather: this.weather, weatherTimer: this.weatherTimer,
+      animals: this.animals.map((a) => ({ ...a, genes: { ...a.genes } })),
+      grain: this.grain.map((g) => ({ ...g })),
+      grass: this.grass.toJSON(),
+    };
+  }
+
+  load(s: WorldSnapshot): void {
+    this.w = s.w; this.h = s.h;
+    this.rng.setState(s.rng);
+    this.nextId = s.nextId;
+    this.clock = s.clock; this.day = s.day; this.born = s.born; this.died = s.died;
+    this.weather = s.weather; this.weatherTimer = s.weatherTimer;
+    this.animals = s.animals.map((a) => ({ ...a, genes: { ...a.genes } }));
+    this.grain = s.grain.map((g) => ({ ...g }));
+    this.grass.load(s.grass);
+    this.effects = [];
+    this.rescueTimer = 0;
   }
 }

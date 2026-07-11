@@ -1,9 +1,9 @@
 # Evaluación: el salto a 3D
 
-> Estado: **prototipo funcionando**. Hay un renderer 3D con Three.js corriendo el
-> *mismo* motor de simulación. Este documento explica qué se probó, qué se
-> reutiliza y cómo sería el camino completo hacia el look Low-Poly/Ghibli del
-> [`BRIEF.md`](./BRIEF.md).
+> Estado: **adoptado**. El 3D con Three.js es ahora la app principal (la vista
+> isométrica que se sirve en `/`). Corre el *mismo* motor de simulación que la
+> versión 2D. Este documento explica qué se probó, qué se reutiliza y cómo sería
+> el camino completo hacia el look Low-Poly/Ghibli del [`BRIEF.md`](./BRIEF.md).
 
 ## 1. Qué se construyó (prueba de concepto)
 
@@ -19,9 +19,9 @@
   (`InstancedMesh`, un *draw call* por especie), iluminación hemisférica +
   direccional con **ciclo día/noche** atado a `world.clock`, lluvia por partículas
   y **cámara con órbita suave** (el "cuadro vivo" del brief).
-- Se compila a un único archivo (`npm run build:3d` → `dist3d/three.html`) y se
-  publica en Pages en **`/three.html`**, separado del bundle 2D para no cargarle
-  Three.js (~180 KB gz) a quien usa la versión liviana.
+- Se compila al **único `index.html`** que se sirve en Pages (Three.js incluido,
+  ~180 KB gz). La cámara es **isométrica fija** (diorama), ajustable con
+  arrastre/rueda/teclado — no rota sola.
 
 ## 2. La tesis que valida (lo importante)
 
@@ -84,8 +84,7 @@ superiores; y aun así el núcleo de reglas se podría portar, no rehacer.
 ## 7. Cómo verlo
 
 ```bash
-npm run dev            # y abrir /three.html   (prototipo 3D)
-npm run build:3d       # bundle único en dist3d/three.html
+npm run dev     # app 3D en el navegador
+npm run build   # bundle único en dist/index.html
 ```
-En producción queda publicado junto al 2D: `…/Simulacra/` (2D) y
-`…/Simulacra/three.html` (prototipo 3D).
+En producción es la app principal: `…/Simulacra/`.

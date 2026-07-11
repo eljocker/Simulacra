@@ -1,28 +1,30 @@
 import { World } from '../sim/world.ts';
-import type { Intervention } from '../sim/types.ts';
+import type { Intervention, WorldSnapshot } from '../sim/types.ts';
 import { Renderer } from '../render/renderer.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
-import { Store, type HistoryPoint, type Tool } from './store.ts';
+import { Store, type HistoryPoint } from './store.ts';
+import { AUTOSAVE_ID, deleteSnapshot, getSnapshot, listSnapshots, putSnapshot, type SnapshotRecord } from '../persistence/db.ts';
 
 export type RendererFactory = (canvas: HTMLCanvasElement) => IRenderer;
 const default2D: RendererFactory = (c) => new Renderer(c);
 
 const FIXED = 1 / 60;
 const HISTORY_MAX = 200;
+const AUTOSAVE_EVERY = 15; // seconds of real time
 
 // Owns the world + renderer and drives them with a fixed-timestep accumulator.
-// Publishes lightweight stats to the Store for React to read.
+// Publishes lightweight stats to the Store and persists state to IndexedDB.
 export class Engine {
   world: World;
   renderer: IRenderer;
   store = new Store();
   private running = true;
   private speed = 1;
-  private tool: Tool = 'feed';
   private last = 0;
   private raf = 0;
   private statAcc = 0;
   private histAcc = 0;
+  private autoAcc = 0;
   private history: HistoryPoint[] = [];
 
   constructor(private canvas: HTMLCanvasElement, makeRenderer: RendererFactory = default2D) {
@@ -64,6 +66,11 @@ export class Engine {
         this.history.push({ chicken: s.chicken, sheep: s.sheep, cow: s.cow, fox: s.fox, grass: s.grass });
         if (this.history.length > HISTORY_MAX) this.history.shift();
       }
+      this.autoAcc += real;
+      if (this.autoAcc >= AUTOSAVE_EVERY) {
+        this.autoAcc = 0;
+        void this.saveAuto();
+      }
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);
@@ -75,7 +82,6 @@ export class Engine {
 
   resize(): void {
     const { w, h } = this.canvasSize();
-    this.world.resize(w, h);
     this.renderer.resize(w, h);
   }
 
@@ -90,24 +96,56 @@ export class Engine {
     this.speed = v;
     this.store.setSpeed(v);
   }
-  setTool(t: Tool): void {
-    this.tool = t;
-    this.store.setTool(t);
-  }
   reset(): void {
-    this.world.rng = this.world.rng; // keep instance
     this.world.seed();
     this.history = [];
+    this.renderer.reset?.();
     this.store.setStats(this.world.stats(), this.history);
   }
-
   intervene(iv: Intervention): void {
     this.world.applyIntervention(iv);
   }
 
-  // pointer on the field: apply the armed tool
-  click(x: number, y: number): void {
-    if (this.tool === 'meteor') this.world.applyIntervention({ kind: 'meteor', x, y });
-    else this.world.applyIntervention({ kind: 'feed', x, y });
+  // ---- persistence ----
+  private applySnapshot(snap: WorldSnapshot): void {
+    this.world.load(snap);
+    this.history = [];
+    this.renderer.reset?.();
+    this.store.setStats(this.world.stats(), this.history);
+  }
+
+  async saveAuto(): Promise<void> {
+    try {
+      await putSnapshot({ id: AUTOSAVE_ID, name: 'Sesión anterior', createdAt: Date.now(), day: this.world.day, auto: true, snapshot: this.world.serialize() });
+    } catch { /* storage unavailable — keep running */ }
+  }
+
+  async restoreLast(): Promise<boolean> {
+    try {
+      const rec = await getSnapshot(AUTOSAVE_ID);
+      if (rec && rec.snapshot?.v === 1) {
+        this.applySnapshot(rec.snapshot);
+        return true;
+      }
+    } catch { /* ignore */ }
+    return false;
+  }
+
+  async saveNamed(name: string): Promise<void> {
+    const id = (crypto.randomUUID?.() ?? String(Date.now() + Math.random()));
+    await putSnapshot({ id, name, createdAt: Date.now(), day: this.world.day, snapshot: this.world.serialize() });
+  }
+
+  async listSaved(): Promise<SnapshotRecord[]> {
+    try { return await listSnapshots(); } catch { return []; }
+  }
+
+  async loadSaved(id: string): Promise<void> {
+    const rec = await getSnapshot(id);
+    if (rec && rec.snapshot?.v === 1) this.applySnapshot(rec.snapshot);
+  }
+
+  async deleteSaved(id: string): Promise<void> {
+    await deleteSnapshot(id);
   }
 }

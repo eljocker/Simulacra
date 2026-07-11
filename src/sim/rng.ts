@@ -5,6 +5,12 @@ export class RNG {
   constructor(seed = 1) {
     this.s = seed >>> 0;
   }
+  getState(): number {
+    return this.s >>> 0;
+  }
+  setState(s: number): void {
+    this.s = s >>> 0;
+  }
   next(): number {
     this.s |= 0;
     this.s = (this.s + 0x6d2b79f5) | 0;
