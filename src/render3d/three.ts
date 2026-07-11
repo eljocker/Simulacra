@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { World } from '../sim/world.ts';
 import type { SpeciesId } from '../sim/types.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
+import { fbm } from './noise.ts';
 
 const SC = 0.06; // world px -> scene units
 const MAX_INST = 280;
@@ -70,6 +71,22 @@ function makeGlowTexture(): THREE.Texture {
   return new THREE.CanvasTexture(c);
 }
 
+// fluffy cloud silhouette from a few overlapping soft blobs
+function makeCloudTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d')!;
+  const blob = (cx: number, cy: number, r: number, a: number) => {
+    const grd = g.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grd.addColorStop(0, `rgba(255,255,255,${a})`);
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 128, 128);
+  };
+  blob(54, 74, 34, 0.9); blob(80, 70, 30, 0.85); blob(66, 60, 26, 0.8); blob(40, 66, 22, 0.7); blob(92, 78, 20, 0.7);
+  return new THREE.CanvasTexture(c);
+}
+
 export class ThreeRenderer implements IRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -83,7 +100,17 @@ export class ThreeRenderer implements IRenderer {
   private foot = {} as Record<SpeciesId, number>; // -min.y of each model: how high to sit it so its feet rest on the ground
   private dummy = new THREE.Object3D();
   private rain: THREE.Points;
+  private clouds: THREE.Sprite[] = [];
+  private foliage: THREE.Object3D[] = []; // tree crowns, swayed by wind
   private built = false;
+  private t = 0; // frame counter for ambient motion (clouds, wind)
+
+  // terrain relief (procedural, deterministic) + pond basin
+  private terAmp = 2.2;
+  private terScale = 0.05;
+  private readonly terOff = 137.2;
+  private pondC = new THREE.Vector3();
+  private pondR = 0;
 
   // fixed isometric camera rig — no auto motion; user nudges with mouse/keys
   private az = Math.PI * 0.25;
@@ -111,8 +138,7 @@ export class ThreeRenderer implements IRenderer {
     this.sunSprite.scale.setScalar(20);
     this.scene.add(this.sunSprite);
 
-    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ color: 0x5f8f3e, roughness: 1 }));
-    this.ground.rotation.x = -Math.PI / 2;
+    this.ground = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true }));
     this.scene.add(this.ground, this.scenery);
 
     (Object.keys(GEO) as SpeciesId[]).forEach((sp) => {
@@ -141,7 +167,35 @@ export class ThreeRenderer implements IRenderer {
     this.rain.visible = false;
     this.scene.add(this.rain);
 
+    // drifting procedural clouds (the brief's "anti-loop": the sky never repeats)
+    const cloudTex = makeCloudTexture();
+    for (let i = 0; i < 16; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, opacity: 0.9, depthWrite: false }));
+      const sc = 10 + Math.random() * 16;
+      s.scale.set(sc * 1.6, sc, 1);
+      // high and behind the field, so they read as sky and never sit on the ground
+      s.position.set((Math.random() - 0.5) * 165, 32 + Math.random() * 20, -28 - Math.random() * 72);
+      s.userData.speed = 0.6 + Math.random() * 0.9;
+      this.clouds.push(s);
+      this.scene.add(s);
+    }
+
     this.attachControls();
+  }
+
+  // procedural terrain height at a scene-space point (matches the mesh, so
+  // animals and props sit exactly on the relief). Carves a basin under the pond.
+  private terrainY(sx: number, sz: number): number {
+    let h = (fbm(sx * this.terScale + this.terOff, sz * this.terScale + this.terOff, 4) - 0.5) * 2 * this.terAmp;
+    if (this.pondR > 0) {
+      const d = Math.hypot(sx - this.pondC.x, sz - this.pondC.z);
+      const edge = this.pondR * 1.4;
+      if (d < edge) {
+        const k = 1 - d / edge;
+        h = h * (1 - k) + (-this.terAmp * 0.5) * k;
+      }
+    }
+    return h;
   }
 
   // ---- camera controls: drag to rotate, wheel to zoom, arrows/±to nudge ----
@@ -216,11 +270,40 @@ export class ThreeRenderer implements IRenderer {
     }
     this.scenery.clear();
 
+    this.foliage = [];
     const gw = world.w * SC, gh = world.h * SC;
-    this.ground.geometry.dispose();
-    this.ground.geometry = new THREE.PlaneGeometry(gw, gh);
+    this.terAmp = Math.min(2.6, Math.max(gw, gh) * 0.05);
+    this.pondC.set((world.w * 0.82 - world.w / 2) * SC, 0, (world.h * 0.8 - world.h / 2) * SC);
+    this.pondR = gw * 0.09;
 
-    const toScene = (x: number, y: number) => new THREE.Vector3((x - world.w / 2) * SC, 0, (y - world.h / 2) * SC);
+    // ---- terrain relief: subdivided plane displaced by noise, coloured by height ----
+    const segX = Math.max(8, Math.round(gw / 1.3));
+    const segY = Math.max(8, Math.round(gh / 1.3));
+    const geo = new THREE.PlaneGeometry(gw, gh, segX, segY);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    const col = new Float32Array(pos.count * 3);
+    const lo = new THREE.Color(0x496d2b), hi = new THREE.Color(0x79a44b), dry = new THREE.Color(0x9c8c46);
+    const tmp = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), z = pos.getZ(i);
+      const y = this.terrainY(x, z);
+      pos.setY(i, y);
+      const tint = Math.max(0, Math.min(1, (y / this.terAmp) * 0.5 + 0.5));
+      const patch = fbm(x * 0.12 + 5, z * 0.12 + 5, 3);
+      tmp.copy(lo).lerp(hi, tint).lerp(dry, patch * 0.16);
+      col[i * 3] = tmp.r; col[i * 3 + 1] = tmp.g; col[i * 3 + 2] = tmp.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.computeVertexNormals();
+    this.ground.geometry.dispose();
+    this.ground.geometry = geo;
+
+    // props follow the relief
+    const toScene = (x: number, y: number) => {
+      const sx = (x - world.w / 2) * SC, sz = (y - world.h / 2) * SC;
+      return new THREE.Vector3(sx, this.terrainY(sx, sz), sz);
+    };
 
     // barn
     const barn = new THREE.Group();
@@ -232,28 +315,46 @@ export class ThreeRenderer implements IRenderer {
     barn.position.copy(toScene(world.w * 0.52 + 40, 90));
     this.scenery.add(barn);
 
-    // pond
-    const pond = new THREE.Mesh(new THREE.CircleGeometry(gw * 0.09, 24), new THREE.MeshStandardMaterial({ color: 0x3e7fa6, roughness: 0.3, metalness: 0.1 }));
-    pond.rotation.x = -Math.PI / 2; pond.position.copy(toScene(world.w * 0.82, world.h * 0.8)); pond.position.y = 0.02;
+    // pond (sits in its carved basin)
+    const pond = new THREE.Mesh(new THREE.CircleGeometry(this.pondR * 1.15, 28), new THREE.MeshStandardMaterial({ color: 0x4691b6, roughness: 0.2, metalness: 0.15 }));
+    pond.rotation.x = -Math.PI / 2;
+    pond.position.set(this.pondC.x, this.terrainY(this.pondC.x, this.pondC.z) + 0.3, this.pondC.z);
     this.scenery.add(pond);
 
-    // trees — deterministic scatter (no RNG, keeps sim determinism intact)
+    // trees — deterministic scatter (no RNG); crowns collected for wind sway
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, flatShading: true });
     const leafMat = new THREE.MeshStandardMaterial({ color: 0x3f7a34, flatShading: true });
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < 11; i++) {
       const fx = (Math.sin(i * 12.9898) * 43758.5453) % 1;
       const fy = (Math.sin(i * 78.233) * 12543.128) % 1;
-      const x = (Math.abs(fx) * 0.8 + 0.1) * world.w;
-      const y = (Math.abs(fy) * 0.8 + 0.1) * world.h;
+      const x = (Math.abs(fx) * 0.82 + 0.09) * world.w;
+      const y = (Math.abs(fy) * 0.82 + 0.09) * world.h;
       const t = new THREE.Group();
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), trunkMat);
       trunk.position.y = 0.6;
       const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(0.9, 0), leafMat);
       leaves.position.y = 1.7;
+      leaves.userData.phase = i * 1.7;
+      this.foliage.push(leaves);
       t.scale.setScalar(0.8 + Math.abs(fx) * 0.8);
       t.add(trunk, leaves);
       t.position.copy(toScene(x, y));
       this.scenery.add(t);
+    }
+
+    // rocks for a bit of texture
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a8f92, flatShading: true });
+    for (let i = 0; i < 7; i++) {
+      const fx = (Math.sin(i * 31.7 + 2) * 9137.7) % 1;
+      const fy = (Math.sin(i * 51.3 + 4) * 3571.3) % 1;
+      const x = (Math.abs(fx) * 0.84 + 0.08) * world.w;
+      const y = (Math.abs(fy) * 0.84 + 0.08) * world.h;
+      const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4 + Math.abs(fx) * 0.4, 0), rockMat);
+      rock.scale.y = 0.6;
+      rock.position.copy(toScene(x, y));
+      rock.position.y += 0.12;
+      rock.rotation.y = fx * 6;
+      this.scenery.add(rock);
     }
 
     // frame the whole field (iso diamond spans ~gw+gh); user zooms from there
@@ -284,9 +385,10 @@ export class ThreeRenderer implements IRenderer {
       const i = counts[a.species];
       if (i >= MAX_INST) continue;
       const s = a.genes.size * a.born * 0.085;
-      // gravity rule: feet rest on the ground plane — foot offset scales with size,
-      // so no animal can ever float or sink regardless of its model or scale.
-      this.dummy.position.set((a.x - world.w / 2) * SC, this.foot[a.species] * s, (a.y - world.h / 2) * SC);
+      // gravity rule: feet rest on the terrain surface at the animal's position,
+      // so no animal can ever float or sink — even over hills.
+      const sx = (a.x - world.w / 2) * SC, sz = (a.y - world.h / 2) * SC;
+      this.dummy.position.set(sx, this.terrainY(sx, sz) + this.foot[a.species] * s, sz);
       this.dummy.rotation.set(0, -a.heading, 0);
       this.dummy.scale.setScalar(s);
       this.dummy.updateMatrix();
@@ -325,6 +427,22 @@ export class ThreeRenderer implements IRenderer {
         p.setY(i, y);
       }
       p.needsUpdate = true;
+    }
+
+    // ambient motion — the anti-loop: clouds drift, trees sway (wind picks up in rain)
+    this.t++;
+    const wind = world.weather === 'rain' ? 2.1 : 1;
+    for (const cl of this.clouds) {
+      cl.position.x += 0.02 * (cl.userData.speed as number) * wind;
+      if (cl.position.x > 82) cl.position.x = -82;
+      const m = cl.material as THREE.SpriteMaterial;
+      m.opacity = lerp(0.9, 0.42, n) * (world.weather === 'drought' ? 0.45 : 1);
+      m.color.setRGB(lerp(1, 0.55, n), lerp(1, 0.58, n), lerp(1, 0.72, n));
+    }
+    for (const f of this.foliage) {
+      const ph = f.userData.phase as number;
+      f.rotation.z = Math.sin(this.t * 0.03 + ph) * 0.06 * wind;
+      f.rotation.x = Math.cos(this.t * 0.025 + ph) * 0.04 * wind;
     }
 
     this.renderer.render(this.scene, this.camera);

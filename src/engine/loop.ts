@@ -18,6 +18,9 @@ function realClockFraction(): number {
 const FIXED = 1 / 60;
 const HISTORY_MAX = 200;
 const AUTOSAVE_EVERY = 15; // seconds of real time
+// Global calm factor: 1× on the slider runs the ecosystem at this fraction of
+// real time, for a contemplative pace. Uniform time-scaling — balance-invariant.
+const PACE = 0.6;
 
 // Owns the world + renderer and drives them with a fixed-timestep accumulator.
 // Publishes lightweight stats to the Store and persists state to IndexedDB.
@@ -54,7 +57,7 @@ export class Engine {
       if (real > 0.1) real = 0.1;
       this.world.clock = realClockFraction(); // sun follows the real hour of day
       if (this.running) {
-        let dt = real * this.speed;
+        let dt = real * this.speed * PACE;
         while (dt > 0) {
           const step = Math.min(FIXED, dt);
           this.world.tick(step);
