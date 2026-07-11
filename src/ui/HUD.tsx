@@ -28,6 +28,7 @@ const GROUPS: { kind: EntityKind; ic: string; name: string; col: string }[] = [
   { kind: 'sheep', ic: '🐑', name: 'Ovejas', col: 'var(--sheep)' },
   { kind: 'cow', ic: '🐄', name: 'Vacas', col: 'var(--cow)' },
   { kind: 'fox', ic: '🦊', name: 'Zorros', col: 'var(--fox)' },
+  { kind: 'duck', ic: '🦆', name: 'Patos', col: 'var(--duck)' },
   { kind: 'scavenger', ic: '🦅', name: 'Buitres', col: 'var(--ink-soft)' },
 ];
 

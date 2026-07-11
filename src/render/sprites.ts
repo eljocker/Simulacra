@@ -117,8 +117,38 @@ function fox(ctx: C, s: number): void {
   eyes(ctx, s);
 }
 
+function duck(ctx: C, s: number): void {
+  shadow(ctx, s);
+  // body
+  ctx.fillStyle = '#f3efe6';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, s * 1.1, s * 0.78, 0, 0, 6.2832);
+  ctx.fill();
+  // tail
+  ctx.beginPath();
+  ctx.moveTo(-s * 0.9, 0);
+  ctx.lineTo(-s * 1.5, -s * 0.3);
+  ctx.lineTo(-s * 1.2, s * 0.2);
+  ctx.closePath();
+  ctx.fill();
+  // green head
+  ctx.fillStyle = '#2f7d46';
+  ctx.beginPath();
+  ctx.arc(s * 0.7, -s * 0.25, s * 0.5, 0, 6.2832);
+  ctx.fill();
+  // red beak
+  ctx.fillStyle = '#db4a2a';
+  ctx.beginPath();
+  ctx.moveTo(s * 1.05, -s * 0.3);
+  ctx.lineTo(s * 1.6, -s * 0.15);
+  ctx.lineTo(s * 1.1, s * 0.02);
+  ctx.closePath();
+  ctx.fill();
+  eyes(ctx, s * 0.85);
+}
+
 const DRAW: Record<Animal['species'], (ctx: C, s: number) => void> = {
-  chicken, sheep, cow, fox,
+  chicken, sheep, cow, fox, duck,
 };
 
 export function drawAnimal(ctx: C, a: Animal): void {

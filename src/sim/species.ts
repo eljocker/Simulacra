@@ -53,6 +53,12 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     grazeGain: 0, reproduceAt: 210, reproCost: 0.5, cooldown: 20, maxAge: 4 * SECONDS_PER_YEAR, matureAt: 27, cap: 34,
     preys: ['chicken'], fleesFrom: [], catchEnergy: 72,
   },
+  duck: {
+    id: 'duck', label: 'Patos', emoji: '🦆', diet: 'herbivore', color: '#f1eee4',
+    e0: 70, speed: 26, sense: 70, size: 8, metabolism: 2.2, moveCost: 0.03,
+    grazeGain: 0, reproduceAt: 120, reproCost: 0.5, cooldown: 16, maxAge: 8 * SECONDS_PER_YEAR, matureAt: 55, cap: 14,
+    preys: [], fleesFrom: [], catchEnergy: 0, // dabbles in the lagoon; safe from foxes on the water
+  },
 };
 
 export const HERBIVORES: SpeciesId[] = ['chicken', 'sheep', 'cow'];

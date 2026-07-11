@@ -47,20 +47,21 @@ export interface UIState {
   selected: SelectedInfo | null;
   roster: Roster;
   rewind: RewindUI;
+  sector: string | null; // currently highlighted / spawn-target sector id
 }
 
 const EMPTY_STATS: Stats = {
-  chicken: 0, sheep: 0, cow: 0, fox: 0, scavenger: 0, grass: 0, day: 1, clock: 0.5, weather: 'clear', born: 0, died: 0,
+  chicken: 0, sheep: 0, cow: 0, fox: 0, duck: 0, scavenger: 0, grass: 0, day: 1, clock: 0.5, weather: 'clear', born: 0, died: 0,
 };
 
-const EMPTY_ROSTER: Roster = { chicken: [], sheep: [], cow: [], fox: [], scavenger: [] };
+const EMPTY_ROSTER: Roster = { chicken: [], sheep: [], cow: [], fox: [], duck: [], scavenger: [] };
 const EMPTY_REWIND: RewindUI = { active: false, playing: false, index: 0, count: 0, day: 1, clock: 0.5 };
 
 // Minimal external store compatible with React's useSyncExternalStore.
 export class Store {
   private state: UIState = {
     stats: EMPTY_STATS, history: [], events: [], running: true, speed: 1,
-    terrainSize: 1, density: 1, selected: null, roster: EMPTY_ROSTER, rewind: EMPTY_REWIND,
+    terrainSize: 1, density: 1, selected: null, roster: EMPTY_ROSTER, rewind: EMPTY_REWIND, sector: null,
   };
   private listeners = new Set<() => void>();
 
@@ -84,6 +85,9 @@ export class Store {
   }
   setRunning(running: boolean): void {
     this.emit({ running });
+  }
+  setSector(sector: string | null): void {
+    this.emit({ sector });
   }
   setSpeed(speed: number): void {
     this.emit({ speed });

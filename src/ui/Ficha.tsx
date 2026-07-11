@@ -6,7 +6,7 @@ import { SCAV_MAXAGE, SCAV_REPRO_AT } from '../sim/world.ts';
 import { DAY_LENGTH, ageLabel } from '../sim/time.ts';
 
 const MEAL: Record<string, string> = {
-  pasto: '🌾 Pastó', grano: '🌽 Comió grano', fruta: '🍎 Comió fruta', presa: '🍖 Cazó una presa',
+  pasto: '🌾 Pastó', grano: '🌽 Comió grano', fruta: '🍎 Comió fruta', presa: '🍖 Cazó una presa', alga: '💧 Dabbleó en el agua',
 };
 
 const SP: Record<EntityKind, { n: string; e: string; diet: string }> = {
@@ -14,6 +14,7 @@ const SP: Record<EntityKind, { n: string; e: string; diet: string }> = {
   sheep: { n: 'Oveja', e: '🐑', diet: 'Herbívora · pasta' },
   cow: { n: 'Vaca', e: '🐄', diet: 'Herbívora · pasta' },
   fox: { n: 'Zorro', e: '🦊', diet: 'Carnívoro · caza gallinas' },
+  duck: { n: 'Pato', e: '🦆', diet: 'Acuático · dabblea en la laguna' },
   scavenger: { n: 'Buitre', e: '🦅', diet: 'Carroñero · devora cadáveres' },
 };
 

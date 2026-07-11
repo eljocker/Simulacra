@@ -3,6 +3,7 @@ import type { Engine } from '../engine/loop.ts';
 import type { UIState } from '../engine/store.ts';
 import type { SnapshotRecord } from '../persistence/db.ts';
 import { PopulationChart } from './PopulationChart.tsx';
+import { SECTORS, sectorById } from '../sim/sectors.ts';
 
 const TERRAINS = [
   { n: 'Chico', v: 0.75 },
@@ -111,12 +112,28 @@ export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
         </div>
 
         <div className="group">
-          <div className="glab">🐾 Poblar</div>
-          <div className="btnrow c4">
-            <button className="b tall" onClick={() => engine.intervene({ kind: 'spawn', species: 'chicken', n: 3 })}><span className="e">🐔</span>+3</button>
-            <button className="b tall" onClick={() => engine.intervene({ kind: 'spawn', species: 'sheep', n: 2 })}><span className="e">🐑</span>+2</button>
-            <button className="b tall" onClick={() => engine.intervene({ kind: 'spawn', species: 'cow', n: 1 })}><span className="e">🐄</span>+1</button>
-            <button className="b tall" onClick={() => engine.intervene({ kind: 'spawn', species: 'fox', n: 1 })}><span className="e">🦊</span>+1</button>
+          <div className="glab">🗺️ Sectores <span className="ghint">dónde nacen · click resalta</span></div>
+          <div className="sectors">
+            {SECTORS.map((s) => (
+              <button key={s.id} className={`sector-chip${ui.sector === s.id ? ' on' : ''}`}
+                onClick={() => engine.setSector(s.id)} title={s.desc}>
+                <span className="e">{s.emoji}</span>{s.name.replace(/^(El |La |Campo de |Pradera de )/, '')}
+              </button>
+            ))}
+          </div>
+          {ui.sector
+            ? <div className="sector-desc">{sectorById(ui.sector)?.emoji} <b>{sectorById(ui.sector)?.name}</b> — {sectorById(ui.sector)?.desc}</div>
+            : <div className="sector-desc dim">Sin sector: las crías nacen en cualquier parte. Elegí uno para dirigir dónde nacen.</div>}
+        </div>
+
+        <div className="group">
+          <div className="glab">🐾 Poblar <span className="ghint">nacen con edad 0{ui.sector ? ` · en ${sectorById(ui.sector)?.name}` : ''}</span></div>
+          <div className="btnrow" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6 }}>
+            <button className="b tall" onClick={() => engine.spawn('chicken', 3)}><span className="e">🐔</span>+3</button>
+            <button className="b tall" onClick={() => engine.spawn('sheep', 2)}><span className="e">🐑</span>+2</button>
+            <button className="b tall" onClick={() => engine.spawn('cow', 1)}><span className="e">🐄</span>+1</button>
+            <button className="b tall" onClick={() => engine.spawn('fox', 1)}><span className="e">🦊</span>+1</button>
+            <button className="b tall" onClick={() => engine.spawn('duck', 2)}><span className="e">🦆</span>+2</button>
           </div>
         </div>
 

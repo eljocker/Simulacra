@@ -1,8 +1,9 @@
 import { World, SCAV_REPRO_AT } from '../sim/world.ts';
-import type { Intervention, WorldSnapshot } from '../sim/types.ts';
+import type { Intervention, SpeciesId, WorldSnapshot } from '../sim/types.ts';
 import { Renderer } from '../render/renderer.ts';
 import type { IRenderer } from '../render/IRenderer.ts';
 import { fullness } from '../sim/species.ts';
+import { sectorById } from '../sim/sectors.ts';
 import { Store, type EntityKind, type HistoryPoint, type Roster, type SelectedInfo } from './store.ts';
 import { AUTOSAVE_ID, deleteSnapshot, getSnapshot, listSnapshots, putSnapshot, type SnapshotRecord } from '../persistence/db.ts';
 
@@ -84,7 +85,7 @@ export class Engine {
   // A compact, id-sorted roster per kind so the HUD can expand a group and let
   // the user pick one individual out of the herd.
   private roster(): Roster {
-    const r: Roster = { chicken: [], sheep: [], cow: [], fox: [], scavenger: [] };
+    const r: Roster = { chicken: [], sheep: [], cow: [], fox: [], duck: [], scavenger: [] };
     for (const a of this.world.animals) r[a.species].push({ id: a.id, f: fullness(a.species, a.energy), age: a.age });
     for (const s of this.world.scavengers) {
       r.scavenger.push({ id: s.id, f: Math.max(0, Math.min(1, s.energy / SCAV_REPRO_AT)), age: s.age });
@@ -129,7 +130,18 @@ export class Engine {
     this.pushStats();
   }
 
+  // frame the simulation on a random creature up close, and follow it — so the
+  // farm opens on a life rather than an empty wide shot
+  focusRandom(): void {
+    const a = this.world.animals;
+    if (!a.length) return;
+    const pick = a[Math.floor(Math.random() * a.length)];
+    this.renderer.setZoom?.(3);
+    this.select(pick.id);
+  }
+
   start(): void {
+    this.focusRandom();
     this.last = performance.now();
     const frame = (now: number) => {
       let real = (now - this.last) / 1000;
@@ -209,6 +221,23 @@ export class Engine {
   intervene(iv: Intervention): void {
     if (this.rewinding) return; // the past is read-only — no meddling with what already happened
     this.world.applyIntervention(iv);
+  }
+
+  // ---- sectors: highlight a region + choose where new creatures are born ----
+  private sectorId: string | null = null;
+  setSector(id: string | null): void {
+    this.sectorId = this.sectorId === id ? null : id; // click again to clear
+    const s = sectorById(this.sectorId);
+    this.renderer.setSector?.(s ? { name: `${s.emoji} ${s.name}`, cx: s.cx, cy: s.cy, r: s.r } : null);
+    this.store.setSector(this.sectorId);
+  }
+
+  // spawn newborns (age 0) — inside the chosen sector if one is selected, else anywhere
+  spawn(species: SpeciesId, n: number): void {
+    if (this.rewinding) return;
+    const s = sectorById(this.sectorId);
+    if (s) this.world.applyIntervention({ kind: 'spawn', species, n, x: s.cx * this.world.w, y: s.cy * this.world.h });
+    else this.world.applyIntervention({ kind: 'spawn', species, n });
   }
 
   // ---- rewind: step back through captured moments and watch them, read-only ----
@@ -301,6 +330,7 @@ export class Engine {
     this.renderer.setSelected?.(null);
     this.renderer.reset?.();
     this.pushStats();
+    this.focusRandom(); // returning session opens close on a random creature too
   }
   async saveAuto(): Promise<void> {
     if (this.rewinding) return; // the world is showing the past — don't persist that as "current"

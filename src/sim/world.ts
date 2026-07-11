@@ -1,5 +1,5 @@
-import type { Animal, Corpse, Duck, Effect, Egg, Fruit, Grain, Intervention, LifeEvent, Scavenger, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
-import { SPECIES, HERBIVORES } from './species.ts';
+import type { Animal, Corpse, Effect, Egg, Fruit, Grain, Intervention, LifeEvent, Scavenger, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
+import { SPECIES, HERBIVORES, growthFactor } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
 import { GrassField } from './grass.ts';
@@ -21,10 +21,9 @@ const SCAV_MIN = 2;        // a couple always circle overhead
 const SCAV_CAP = 6;
 const SCAV_FEED_TIME = 1.3; // seconds to devour a corpse
 export const SCAV_REPRO_AT = 150;
-// ducks (aquatic — never leave the pond)
-const DUCK_MIN = 3;
-const DUCK_MAXAGE = 220;
-const DUCK_SPEED = 20;
+// ducks (aquatic species — never leave the pond; dabble for food)
+const DUCK_MIN = 3;         // a few always paddle the lagoon
+const DUCK_DABBLE = 5;      // energy/s gained filter-feeding in the water
 // fruit (apples fallen from trees — real edible food in the environment)
 const FRUIT_CAP = 18;
 const FRUIT_DROP_EVERY = 2.3; // a tree drops a fruit roughly this often
@@ -39,7 +38,6 @@ export class World {
   corpses: Corpse[] = [];
   eggs: Egg[] = [];
   scavengers: Scavenger[] = [];
-  ducks: Duck[] = [];
   trees: { x: number; y: number; scale: number }[] = []; // deterministic; renderer draws these, fruit falls from them
   grass: GrassField;
   grain: Grain[] = [];
@@ -78,6 +76,38 @@ export class World {
       species: a.species, x: a.x, y: a.y, heading: a.heading,
       size: a.genes.size, born: a.born, age: a.age, t: 0, life: CORPSE_TIME, color: SPECIES[a.species].color,
     });
+  }
+
+  // body radius (world px) for collision — matches the on-screen footprint
+  private bodyRadius(a: Animal): number {
+    return a.genes.size * growthFactor(a.species, a.age) * 0.8;
+  }
+
+  // push overlapping animals apart (one relaxation pass). Runs after movement so
+  // bodies stay solid; predators still reach prey (catch range > body radius).
+  private resolveCollisions(): void {
+    const grid = new SpatialGrid(this.w, this.h, 64);
+    for (const a of this.animals) grid.insert(a);
+    for (const a of this.animals) {
+      const ra = this.bodyRadius(a);
+      grid.forEachNear(a.x, a.y, ra + 24, (o) => o.id > a.id, a, (o) => {
+        const min = ra + this.bodyRadius(o);
+        let dx = o.x - a.x, dy = o.y - a.y;
+        let d = Math.hypot(dx, dy);
+        if (d < 1e-3) { // exactly coincident — split along a deterministic direction
+          dx = (a.id & 1) ? 1 : -1; dy = (a.id & 2) ? 1 : -1; d = Math.hypot(dx, dy);
+        }
+        if (d < min) {
+          const push = (min - d) * 0.5, nx = dx / d, ny = dy / d;
+          a.x -= nx * push; a.y -= ny * push;
+          o.x += nx * push; o.y += ny * push;
+        }
+      });
+    }
+    for (const a of this.animals) { // keep them on the field after the shove
+      a.x = Math.max(3, Math.min(this.w - 3, a.x));
+      a.y = Math.max(3, Math.min(this.h - 3, a.y));
+    }
   }
 
   private makeScavenger(x: number, y: number): Scavenger {
@@ -172,44 +202,10 @@ export class World {
     }
   }
 
-  private makeDuck(): Duck {
-    // spawn somewhere inside the pond
+  // a new duck, placed somewhere inside the lagoon
+  private makeDuckInPond(): Animal {
     const ang = this.rng.range(0, 6.28), rad = this.rng.range(0, this.pond.r * 0.7);
-    return {
-      id: this.nextId++, x: this.pond.x + Math.cos(ang) * rad, y: this.pond.y + Math.sin(ang) * rad,
-      vx: 0, vy: 0, heading: this.rng.range(0, 6.28), age: this.rng.range(0, 60), paddle: this.rng.range(0, 6.28),
-    };
-  }
-
-  // Ducks paddle only within the lagoon — the aquatic mirror of the shore rule.
-  private updateDucks(dt: number): void {
-    const P = this.pond;
-    for (let i = this.ducks.length - 1; i >= 0; i--) {
-      const d = this.ducks[i];
-      d.age += dt;
-      d.paddle += dt * 2.2;
-      if (d.age > DUCK_MAXAGE) { // ducks are mortal too
-        this.effects.push({ x: d.x, y: d.y, t: 0, life: 2.6, kind: 'soul', color: '#e9e7dc' });
-        this.ducks.splice(i, 1);
-        continue;
-      }
-      // gentle paddling wander
-      d.heading += this.rng.range(-0.9, 0.9) * dt;
-      const spd = DUCK_SPEED * (0.5 + 0.5 * Math.abs(Math.sin(d.age * 0.5)));
-      d.vx += (Math.cos(d.heading) * spd - d.vx) * Math.min(1, dt * 1.4);
-      d.vy += (Math.sin(d.heading) * spd - d.vy) * Math.min(1, dt * 1.4);
-      d.x += d.vx * dt; d.y += d.vy * dt;
-      // stay inside the pond: turn back at the shore
-      const ox = d.x - P.x, oy = d.y - P.y;
-      const od = Math.hypot(ox, oy);
-      const lim = P.r * 0.82;
-      if (od > lim) {
-        d.x = P.x + (ox / od) * lim; d.y = P.y + (oy / od) * lim;
-        d.heading = Math.atan2(P.y - d.y, P.x - d.x) + this.rng.range(-0.6, 0.6); // steer inward
-        d.vx *= 0.3; d.vy *= 0.3;
-      }
-    }
-    if (this.ducks.length < DUCK_MIN && P.r > 0) this.ducks.push(this.makeDuck());
+    return this.make('duck', this.pond.x + Math.cos(ang) * rad, this.pond.y + Math.sin(ang) * rad);
   }
 
   constructor(w: number, h: number, seed = 1) {
@@ -258,7 +254,6 @@ export class World {
     this.corpses = [];
     this.eggs = [];
     this.scavengers = [];
-    this.ducks = [];
     this.grain = [];
     this.fruits = [];
     this.fruitTimer = 0;
@@ -285,7 +280,12 @@ export class World {
     for (let i = 0; i < SCAV_MIN; i++) {
       this.scavengers.push(this.makeScavenger(this.rng.range(60, this.w - 60), this.rng.range(60, this.h - 60)));
     }
-    for (let i = 0; i < DUCK_MIN; i++) this.ducks.push(this.makeDuck());
+    for (let i = 0; i < DUCK_MIN; i++) {
+      const d = this.makeDuckInPond();
+      d.born = 1;
+      d.age = this.rng.range(5, 40);
+      this.animals.push(d);
+    }
   }
 
   private make(species: SpeciesId, x: number, y: number, genes?: Animal['genes']): Animal {
@@ -344,7 +344,7 @@ export class World {
 
     // live per-species population, kept accurate through the tick so soft caps
     // can't be overshot by many simultaneous births in one step
-    const pop: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0 };
+    const pop: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0, duck: 0 };
     for (const a of this.animals) pop[a.species]++;
     pop.chicken += this.eggs.length; // eggs reserve a slot so the cap can't be overshot
 
@@ -376,6 +376,11 @@ export class World {
       else if (a.y > this.h - m) a.vy -= (a.y - (this.h - m)) * 3 * dt;
       a.x = Math.max(3, Math.min(this.w - 3, a.x));
       a.y = Math.max(3, Math.min(this.h - 3, a.y));
+      // ducks never leave the water: clamp them inside the lagoon
+      if (a.species === 'duck') {
+        const P = this.pond, ox = a.x - P.x, oy = a.y - P.y, od = Math.hypot(ox, oy), lim = P.r * 0.82;
+        if (od > lim) { a.x = P.x + (ox / od) * lim; a.y = P.y + (oy / od) * lim; a.vx *= 0.3; a.vy *= 0.3; }
+      }
       // turn smoothly toward travel direction, and only when actually moving,
       // so a near-stopped animal never spins in place (calm, painting-like)
       if (a.vx * a.vx + a.vy * a.vy > 16) {
@@ -393,6 +398,11 @@ export class World {
 
       if (asleep) {
         // dozing: no feeding, hunting or breeding until dawn
+      } else if (a.species === 'duck') {
+        // ducks dabble in the lagoon — a steady trickle of food from the water
+        a.energy += DUCK_DABBLE * dt;
+        if (speed < 12) a.eating = 0.4;
+        if (a.energy < def.reproduceAt) this.logMeal(a, 'alga');
       } else if (def.diet === 'herbivore') {
         // graze grass under feet — the "eating" pose shows only when it slows to feed
         const eaten = this.grass.graze(a.x, a.y, 1.4 * dt);
@@ -482,6 +492,10 @@ export class World {
     if (dead.size) this.animals = this.animals.filter((a) => !dead.has(a.id));
     if (newborns.length) this.animals.push(...newborns);
 
+    // solid bodies: nudge any overlapping animals apart so they never share a spot
+    // (no more "three-headed cows"). Deterministic — no RNG — so snapshots still match.
+    this.resolveCollisions();
+
     // grass + grain + effects
     this.grass.regrow(dt, this.weather);
     for (let i = this.grain.length - 1; i >= 0; i--) {
@@ -532,12 +546,20 @@ export class World {
       }
     }
     this.updateScavengers(dt);
-    this.updateDucks(dt);
 
     // rescue effect — a farm shouldn't die out completely
     this.rescueTimer += dt;
     if (this.rescueTimer >= 5) {
       this.rescueTimer = 0;
+      // a few ducks always return to the lagoon
+      if (this.pond.r > 0) {
+        for (let n = this.count('duck'); n < DUCK_MIN; n++) {
+          const d = this.makeDuckInPond();
+          d.born = 1;
+          this.animals.push(d);
+          this.logEvent({ kind: 'birth', species: 'duck', id: d.id, cause: 'llegada' });
+        }
+      }
       for (const sp of HERBIVORES) {
         if (this.count(sp) === 0) {
           for (let i = 0; i < 2; i++) {
@@ -632,6 +654,7 @@ export class World {
       sheep: this.count('sheep'),
       cow: this.count('cow'),
       fox: this.count('fox'),
+      duck: this.count('duck'),
       scavenger: this.scavengers.length,
       grass: this.grass.coverage(),
       day: this.day,
@@ -656,7 +679,6 @@ export class World {
       corpses: this.corpses.map((c) => ({ ...c })),
       eggs: this.eggs.map((e) => ({ ...e, genes: { ...e.genes } })),
       scavengers: this.scavengers.map((s) => ({ ...s })),
-      ducks: this.ducks.map((d) => ({ ...d })),
       grain: this.grain.map((g) => ({ ...g })),
       fruits: this.fruits.map((f) => ({ ...f })),
       fruitTimer: this.fruitTimer,
@@ -679,7 +701,6 @@ export class World {
     this.corpses = (s.corpses ?? []).map((c) => ({ ...c }));
     this.eggs = (s.eggs ?? []).map((e) => ({ ...e, genes: { ...e.genes } }));
     this.scavengers = (s.scavengers ?? []).map((sc) => ({ ...sc }));
-    this.ducks = (s.ducks ?? []).map((d) => ({ ...d }));
     this.grain = s.grain.map((g) => ({ ...g }));
     this.fruits = (s.fruits ?? []).map((f) => ({ ...f }));
     this.fruitTimer = s.fruitTimer ?? 0;

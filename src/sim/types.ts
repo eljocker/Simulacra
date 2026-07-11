@@ -1,4 +1,4 @@
-export type SpeciesId = 'chicken' | 'sheep' | 'cow' | 'fox';
+export type SpeciesId = 'chicken' | 'sheep' | 'cow' | 'fox' | 'duck';
 export type Weather = 'clear' | 'rain' | 'drought';
 
 export interface Genes {
@@ -32,6 +32,7 @@ export interface Stats {
   sheep: number;
   cow: number;
   fox: number;
+  duck: number; // aquatic dwellers of the lagoon — a full species now
   scavenger: number; // aerial carrion birds (buitres) — mortal, counted like the rest
   grass: number; // 0..100 (% of field covered)
   day: number;
@@ -83,7 +84,6 @@ export interface WorldSnapshot {
   corpses: Corpse[];
   eggs: Egg[];
   scavengers: Scavenger[];
-  ducks: Duck[];
   grain: Grain[];
   fruits: Fruit[];
   fruitTimer: number;
@@ -135,19 +135,6 @@ export interface Scavenger {
   state: 'cruise' | 'dive' | 'feed';
   feedT: number; // seconds spent feeding on the current corpse
   flap: number; // wing-flap phase
-}
-
-// A duck — the lagoon's aquatic dweller. Paddles only within the pond and never
-// leaves the water (the mirror of the land animals' shore rule).
-export interface Duck {
-  id: number;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  heading: number;
-  age: number;
-  paddle: number; // bob/paddle phase
 }
 
 export interface Effect {

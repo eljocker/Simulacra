@@ -7,6 +7,7 @@ const SP: Record<SpeciesId, { n: string; e: string }> = {
   sheep: { n: 'Oveja', e: '🐑' },
   cow: { n: 'Vaca', e: '🐄' },
   fox: { n: 'Zorro', e: '🦊' },
+  duck: { n: 'Pato', e: '🦆' },
 };
 
 function hhmm(f: number): string {

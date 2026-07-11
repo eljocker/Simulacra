@@ -11,45 +11,105 @@ const MAX_INST = 280;
 const MAX_CORPSE = 160;
 const CORPSE_COLOR = 0x6b665f; // ashen, lifeless grey (darker than the bluish rocks)
 
-// ---- low-poly geometry per species (merged so it can be instanced: one draw
-// ---- call per species). Parts are non-indexed so mixing indexed and
-// ---- non-indexed sources merges cleanly and flat shading looks faceted. ----
-function merge(...parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  return mergeGeometries(parts.map((p) => p.toNonIndexed()))!;
+// ---- low-poly geometry per species. Every part carries a baked vertex COLOR so a
+// ---- single instanced draw call can show a body, face, legs and details in many
+// ---- colours. Parts are non-indexed so flat shading looks faceted and merges. ----
+const EYE = 0x14110f;
+const HOOF = 0x2b2824;
+
+function tint(geo: THREE.BufferGeometry, color: number): THREE.BufferGeometry {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const n = g.attributes.position.count;
+  const c = new THREE.Color(color);
+  const arr = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+  g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+  return g;
 }
+function combine(...parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  return mergeGeometries(parts)!;
+}
+// a symmetric pair of dark eyes on the head
+function eyes(x: number, y: number, z: number, r = 0.07): THREE.BufferGeometry[] {
+  return [
+    tint(new THREE.SphereGeometry(r, 6, 5).translate(x, y, z), EYE),
+    tint(new THREE.SphereGeometry(r, 6, 5).translate(x, y, -z), EYE),
+  ];
+}
+function leg(x: number, y: number, z: number, w: number, h: number, color: number): THREE.BufferGeometry {
+  return tint(new THREE.BoxGeometry(w, h, w).translate(x, y, z), color);
+}
+
 function chickenGeo(): THREE.BufferGeometry {
-  return merge(
-    new THREE.SphereGeometry(0.5, 8, 6),
-    new THREE.SphereGeometry(0.3, 8, 6).translate(0.42, 0.35, 0),
-    new THREE.ConeGeometry(0.12, 0.3, 6).rotateZ(-Math.PI / 2).translate(0.75, 0.32, 0),
+  const body = 0xf4d35e, beak = 0xe8963a, comb = 0xd8402e;
+  return combine(
+    tint(new THREE.SphereGeometry(0.5, 8, 6), body),
+    tint(new THREE.SphereGeometry(0.3, 8, 6).translate(0.42, 0.35, 0), body),
+    tint(new THREE.ConeGeometry(0.12, 0.3, 6).rotateZ(-Math.PI / 2).translate(0.75, 0.32, 0), beak),
+    tint(new THREE.SphereGeometry(0.09, 6, 5).scale(1, 1.4, 0.6).translate(0.4, 0.62, 0), comb), // comb
+    tint(new THREE.SphereGeometry(0.08, 6, 5).translate(0.62, 0.2, 0), comb), // wattle
+    ...eyes(0.58, 0.42, 0.13, 0.06),
+    leg(0.08, -0.52, 0.14, 0.07, 0.42, beak), leg(0.08, -0.52, -0.14, 0.07, 0.42, beak),
   );
 }
 function sheepGeo(): THREE.BufferGeometry {
-  return merge(
-    new THREE.IcosahedronGeometry(0.62, 0),
-    new THREE.SphereGeometry(0.26, 8, 6).translate(0.55, 0.05, 0),
+  const wool = 0xeef0f2, face = 0x3b3733;
+  return combine(
+    tint(new THREE.IcosahedronGeometry(0.62, 0), wool),
+    tint(new THREE.SphereGeometry(0.26, 8, 6).translate(0.55, 0.05, 0), face),
+    tint(new THREE.SphereGeometry(0.11, 6, 5).scale(0.7, 1, 1).translate(0.5, 0.26, 0.2), face), // ears
+    tint(new THREE.SphereGeometry(0.11, 6, 5).scale(0.7, 1, 1).translate(0.5, 0.26, -0.2), face),
+    ...eyes(0.72, 0.1, 0.1, 0.05),
+    leg(0.3, -0.62, 0.22, 0.1, 0.5, HOOF), leg(-0.28, -0.62, 0.22, 0.1, 0.5, HOOF),
+    leg(0.3, -0.62, -0.22, 0.1, 0.5, HOOF), leg(-0.28, -0.62, -0.22, 0.1, 0.5, HOOF),
   );
 }
 function cowGeo(): THREE.BufferGeometry {
-  return merge(
-    new THREE.BoxGeometry(1.3, 0.66, 0.74),
-    new THREE.BoxGeometry(0.52, 0.5, 0.5).translate(0.82, 0.06, 0),
-    new THREE.BoxGeometry(0.14, 0.4, 0.14).translate(-0.4, -0.5, 0.26),
-    new THREE.BoxGeometry(0.14, 0.4, 0.14).translate(0.4, -0.5, 0.26),
-    new THREE.BoxGeometry(0.14, 0.4, 0.14).translate(-0.4, -0.5, -0.26),
-    new THREE.BoxGeometry(0.14, 0.4, 0.14).translate(0.4, -0.5, -0.26),
+  const body = 0xdadfe3, spot = 0x2b2b30, snout = 0xd7a2a2, horn = 0xe8e2d2;
+  const patch = (x: number, y: number, z: number, s: number) =>
+    tint(new THREE.SphereGeometry(s, 6, 5).scale(1.3, 0.5, 1.2).translate(x, y, z), spot);
+  return combine(
+    tint(new THREE.BoxGeometry(1.3, 0.66, 0.74), body),
+    tint(new THREE.BoxGeometry(0.52, 0.5, 0.5).translate(0.82, 0.06, 0), body),
+    tint(new THREE.BoxGeometry(0.18, 0.22, 0.5).translate(1.08, -0.06, 0), snout), // muzzle
+    // Holstein spots
+    patch(-0.2, 0.34, 0.28, 0.3), patch(0.28, 0.3, -0.3, 0.26), patch(-0.45, 0.1, -0.34, 0.22), patch(0.1, 0.36, 0.34, 0.2),
+    // little horns
+    tint(new THREE.ConeGeometry(0.06, 0.2, 5).translate(0.7, 0.36, 0.18), horn),
+    tint(new THREE.ConeGeometry(0.06, 0.2, 5).translate(0.7, 0.36, -0.18), horn),
+    ...eyes(1.0, 0.16, 0.17, 0.07),
+    leg(-0.4, -0.5, 0.26, 0.15, 0.42, HOOF), leg(0.4, -0.5, 0.26, 0.15, 0.42, HOOF),
+    leg(-0.4, -0.5, -0.26, 0.15, 0.42, HOOF), leg(0.4, -0.5, -0.26, 0.15, 0.42, HOOF),
   );
 }
 function foxGeo(): THREE.BufferGeometry {
-  return merge(
-    new THREE.BoxGeometry(0.95, 0.44, 0.44),
-    new THREE.BoxGeometry(0.42, 0.4, 0.4).translate(0.6, 0.08, 0),
-    new THREE.ConeGeometry(0.14, 0.34, 6).rotateZ(-Math.PI / 2).translate(0.92, 0.02, 0),
-    new THREE.ConeGeometry(0.22, 0.7, 6).rotateZ(Math.PI / 2).translate(-0.7, 0.1, 0),
+  const body = 0xe8712f, nose = 0x24201e, tailTip = 0xf4efe6, ear = 0x3a2418;
+  return combine(
+    tint(new THREE.BoxGeometry(0.95, 0.44, 0.44), body),
+    tint(new THREE.BoxGeometry(0.42, 0.4, 0.4).translate(0.6, 0.08, 0), body),
+    tint(new THREE.ConeGeometry(0.14, 0.34, 6).rotateZ(-Math.PI / 2).translate(0.92, 0.02, 0), nose),
+    tint(new THREE.ConeGeometry(0.22, 0.7, 6).rotateZ(Math.PI / 2).translate(-0.7, 0.1, 0), body),
+    tint(new THREE.SphereGeometry(0.12, 6, 5).translate(-0.95, 0.12, 0), tailTip), // white tail tip
+    tint(new THREE.ConeGeometry(0.1, 0.24, 5).translate(0.52, 0.36, 0.14), ear), // ears
+    tint(new THREE.ConeGeometry(0.1, 0.24, 5).translate(0.52, 0.36, -0.14), ear),
+    ...eyes(0.78, 0.14, 0.13, 0.055),
+    leg(0.3, -0.34, 0.16, 0.1, 0.34, HOOF), leg(-0.3, -0.34, 0.16, 0.1, 0.34, HOOF),
+    leg(0.3, -0.34, -0.16, 0.1, 0.34, HOOF), leg(-0.3, -0.34, -0.16, 0.1, 0.34, HOOF),
   );
 }
-const GEO: Record<SpeciesId, () => THREE.BufferGeometry> = { chicken: chickenGeo, sheep: sheepGeo, cow: cowGeo, fox: foxGeo };
-const COLOR: Record<SpeciesId, number> = { chicken: 0xf4d35e, sheep: 0xeef0f2, cow: 0xdadfe3, fox: 0xe8712f };
+function duckGeo(): THREE.BufferGeometry {
+  const body = 0xf3efe6, head = 0x2f7d46, beak = 0xdb4a2a, wing = 0xd9d3c4;
+  return combine(
+    tint(new THREE.SphereGeometry(0.5, 8, 6).scale(1.25, 0.72, 0.82), body),
+    tint(new THREE.SphereGeometry(0.3, 8, 6).translate(0.55, 0.42, 0), head), // mallard-green head
+    tint(new THREE.ConeGeometry(0.11, 0.28, 6).rotateZ(-Math.PI / 2).translate(0.88, 0.34, 0), beak), // red beak
+    tint(new THREE.SphereGeometry(0.16, 6, 5).scale(1.1, 0.5, 0.7).translate(-0.2, 0.18, 0.3), wing), // wings
+    tint(new THREE.SphereGeometry(0.16, 6, 5).scale(1.1, 0.5, 0.7).translate(-0.2, 0.18, -0.3), wing),
+    tint(new THREE.ConeGeometry(0.12, 0.3, 5).rotateZ(1.9).translate(-0.6, 0.18, 0), body), // tail
+    ...eyes(0.68, 0.5, 0.12, 0.045),
+  );
+}
+const GEO: Record<SpeciesId, () => THREE.BufferGeometry> = { chicken: chickenGeo, sheep: sheepGeo, cow: cowGeo, fox: foxGeo, duck: duckGeo };
 
 function nightFactor(clock: number): number {
   // coupled to the sun's height so darkness and the sun are always in sync
@@ -126,6 +186,21 @@ function makeBirdTexture(): THREE.Texture {
   return new THREE.CanvasTexture(c);
 }
 
+// a rounded pill with the sector's name, for a floating map label
+function makeLabelTexture(text: string): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 160;
+  const g = c.getContext('2d')!;
+  g.fillStyle = 'rgba(38,30,16,0.84)';
+  g.fillRect(20, 44, 472, 72);
+  g.fillStyle = '#ffe6a0';
+  g.font = 'bold 50px system-ui, -apple-system, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, 256, 82);
+  return new THREE.CanvasTexture(c);
+}
+
 export class ThreeRenderer implements IRenderer {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -144,7 +219,6 @@ export class ThreeRenderer implements IRenderer {
   private tmpColor = new THREE.Color();
   private rain: THREE.Points;
   private eggMesh: THREE.InstancedMesh; // incubating chicken eggs
-  private duckMesh: THREE.InstancedMesh; // ducks floating on the pond
   private fruitMesh: THREE.InstancedMesh; // apples/berries fallen from the trees
   private clouds: THREE.Sprite[] = [];
   private foliage: THREE.Object3D[] = []; // tree crowns, swayed by wind
@@ -178,7 +252,7 @@ export class ThreeRenderer implements IRenderer {
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
   private pickCb: ((id: number | null) => void) | null = null;
-  private instIds: Record<SpeciesId, number[]> = { chicken: [], sheep: [], cow: [], fox: [] };
+  private instIds: Record<SpeciesId, number[]> = { chicken: [], sheep: [], cow: [], fox: [], duck: [] };
   private moved = 0;
 
   // selection placemark: a small pin that hovers above the chosen entity (kept
@@ -186,6 +260,12 @@ export class ThreeRenderer implements IRenderer {
   private selectedId: number | null = null;
   private markPin!: THREE.Mesh;
   private following = false;
+
+  // sector highlight: a translucent disc + ring + floating label over a map region
+  private sectorFill!: THREE.Mesh;
+  private sectorRing!: THREE.Mesh;
+  private sectorLabel: THREE.Sprite | null = null;
+  private sector: { name: string; cx: number; cy: number; r: number } | null = null;
 
   setPickHandler(cb: (id: number | null) => void): void {
     this.pickCb = cb;
@@ -195,6 +275,11 @@ export class ThreeRenderer implements IRenderer {
     this.selectedId = id;
     this.markPin.visible = id != null;
     this.following = id != null;
+  }
+
+  setZoom(zoom: number): void {
+    this.camera.zoom = Math.max(0.4, Math.min(6, zoom));
+    this.camera.updateProjectionMatrix();
   }
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -216,7 +301,8 @@ export class ThreeRenderer implements IRenderer {
     this.scene.add(this.ground, this.scenery);
 
     (Object.keys(GEO) as SpeciesId[]).forEach((sp) => {
-      const mat = new THREE.MeshStandardMaterial({ color: COLOR[sp], flatShading: true, roughness: 0.85 });
+      // colours come from the baked vertex colours (body, face, legs, spots, beak)
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.85 });
       const im = new THREE.InstancedMesh(GEO[sp](), mat, MAX_INST);
       im.frustumCulled = false;
       im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -263,18 +349,6 @@ export class ThreeRenderer implements IRenderer {
     this.eggMesh.count = 0;
     this.scene.add(this.eggMesh);
 
-    // ducks: a tiny low-poly body + head + beak (only ever seen on the water)
-    const duckGeo = merge(
-      new THREE.SphereGeometry(0.5, 8, 6).scale(1.25, 0.72, 0.82), // body
-      new THREE.SphereGeometry(0.3, 8, 6).translate(0.55, 0.42, 0), // head
-      new THREE.ConeGeometry(0.1, 0.24, 5).rotateZ(-Math.PI / 2).translate(0.86, 0.36, 0), // beak
-    );
-    this.duckMesh = new THREE.InstancedMesh(duckGeo, new THREE.MeshStandardMaterial({ color: 0xf1eee4, flatShading: true, roughness: 0.8 }), 24);
-    this.duckMesh.frustumCulled = false;
-    this.duckMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.duckMesh.count = 0;
-    this.scene.add(this.duckMesh);
-
     // fruit: a small berry-sized sphere, per-instance colour (apple red / berry purple)
     this.fruitMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 7, 5), new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.6 }), 32);
     this.fruitMesh.frustumCulled = false;
@@ -307,7 +381,52 @@ export class ThreeRenderer implements IRenderer {
     this.markPin.visible = false;
     this.scene.add(this.markPin);
 
+    // sector highlight — a soft filled disc + a bright ring, drawn over the terrain
+    const secColor = 0xffd23f;
+    this.sectorFill = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 44).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: secColor, transparent: true, opacity: 0.14, depthWrite: false, depthTest: false, side: THREE.DoubleSide }),
+    );
+    this.sectorRing = new THREE.Mesh(
+      new THREE.TorusGeometry(1, 0.02, 8, 56).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: secColor, transparent: true, opacity: 0.9, depthWrite: false, depthTest: false }),
+    );
+    this.sectorFill.renderOrder = 996;
+    this.sectorRing.renderOrder = 997;
+    this.sectorFill.visible = this.sectorRing.visible = false;
+    this.scene.add(this.sectorFill, this.sectorRing);
+
     this.attachControls();
+  }
+
+  setSector(sector: { name: string; cx: number; cy: number; r: number } | null): void {
+    this.sector = sector;
+    const on = sector != null;
+    this.sectorFill.visible = this.sectorRing.visible = on;
+    if (this.sectorLabel) { this.scene.remove(this.sectorLabel); (this.sectorLabel.material as THREE.SpriteMaterial).map?.dispose(); (this.sectorLabel.material as THREE.SpriteMaterial).dispose(); this.sectorLabel = null; }
+    if (sector) {
+      this.sectorLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeLabelTexture(sector.name), transparent: true, depthTest: false, depthWrite: false }));
+      this.sectorLabel.renderOrder = 998;
+      this.scene.add(this.sectorLabel);
+    }
+  }
+
+  private updateSector(world: World): void {
+    if (!this.sector) return;
+    const s = this.sector;
+    const sx = (s.cx * world.w - world.w / 2) * SC;
+    const sz = (s.cy * world.h - world.h / 2) * SC;
+    const r = s.r * world.w * SC;
+    const gy = this.terrainY(sx, sz) + 0.25;
+    this.sectorFill.position.set(sx, gy, sz);
+    this.sectorFill.scale.set(r, r, r);
+    this.sectorRing.position.set(sx, gy, sz);
+    const pulse = r * (1 + Math.sin(this.t * 0.1) * 0.02);
+    this.sectorRing.scale.set(pulse, 1, pulse);
+    if (this.sectorLabel) {
+      this.sectorLabel.position.set(sx, gy + r * 0.5 + 3, sz);
+      this.sectorLabel.scale.set(9, 9 * 0.32, 1);
+    }
   }
 
   // Hover the pin above the selected entity and glide the camera so it stays
@@ -578,21 +697,27 @@ export class ThreeRenderer implements IRenderer {
   draw(world: World): void {
     if (!this.built) this.buildScenery(world);
 
-    const counts: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0 };
+    const counts: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0, duck: 0 };
     (Object.keys(this.instIds) as SpeciesId[]).forEach((k) => { this.instIds[k].length = 0; });
     for (const a of world.animals) {
       const im = this.meshes[a.species];
       const i = counts[a.species];
       if (i >= MAX_INST) continue;
       const s = a.genes.size * growthFactor(a.species, a.age) * a.born * 0.085;
-      // gravity rule: feet rest on the terrain surface at the animal's position,
-      // so no animal can ever float or sink — even over hills.
       const sx = (a.x - world.w / 2) * SC, sz = (a.y - world.h / 2) * SC;
-      this.dummy.position.set(sx, this.terrainY(sx, sz) + this.foot[a.species] * s, sz);
+      // ducks float on the water surface; every other animal's feet rest on the
+      // terrain at its position, so nothing floats or sinks — even over hills.
+      const baseY = a.species === 'duck' ? this.pondY + 0.1 : this.terrainY(sx, sz);
+      const spd = Math.hypot(a.vx, a.vy);
+      // walk cycle: a gentle bob + waddle roll while moving, driven by sim-time so
+      // it freezes on pause (legs are modelled; this sells the gait for instances)
+      const walk = Math.min(1, spd / 42);
+      const gait = a.age * 9 + a.id;
+      const bob = a.eating > 0 ? 0 : Math.abs(Math.sin(gait)) * this.modelH[a.species] * s * 0.09 * walk;
+      this.dummy.position.set(sx, baseY + this.foot[a.species] * s + bob, sz);
       this.dummy.rotation.set(0, -a.heading, 0);
-      // eating: dip the nose toward the ground with a little chewing bob. The bob
-      // is driven by the animal's own age (sim time), so it freezes when paused.
-      if (a.eating > 0) this.dummy.rotateZ(-(0.32 + Math.sin(a.age * 8 + a.id) * 0.08));
+      if (a.eating > 0) this.dummy.rotateZ(-(0.32 + Math.sin(a.age * 8 + a.id) * 0.08)); // chew dip
+      else if (walk > 0.05) this.dummy.rotateX(Math.sin(gait) * 0.12 * walk); // waddle roll
       this.dummy.scale.setScalar(s);
       this.dummy.updateMatrix();
       im.setMatrixAt(i, this.dummy.matrix);
@@ -606,7 +731,7 @@ export class ThreeRenderer implements IRenderer {
     });
 
     // fallen bodies — tipped on their side, grey, resting on the terrain
-    const cc: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0 };
+    const cc: Record<SpeciesId, number> = { chicken: 0, sheep: 0, cow: 0, fox: 0, duck: 0 };
     for (const c of world.corpses) {
       const cm = this.corpseMeshes[c.species];
       const i = cc[c.species];
@@ -644,22 +769,6 @@ export class ThreeRenderer implements IRenderer {
     }
     this.eggMesh.count = ei;
     this.eggMesh.instanceMatrix.needsUpdate = true;
-
-    // ducks — float on the water surface with a gentle bob
-    let di = 0;
-    for (const d of world.ducks) {
-      if (di >= 24) break;
-      const sx = (d.x - world.w / 2) * SC, sz = (d.y - world.h / 2) * SC;
-      const bob = Math.sin(d.paddle) * 0.05;
-      this.dummy.position.set(sx, this.pondY + 0.16 + bob, sz);
-      this.dummy.rotation.set(0, -d.heading, 0);
-      this.dummy.scale.setScalar(0.62);
-      this.dummy.updateMatrix();
-      this.duckMesh.setMatrixAt(di, this.dummy.matrix);
-      di++;
-    }
-    this.duckMesh.count = di;
-    this.duckMesh.instanceMatrix.needsUpdate = true;
 
     // fruit — falls from the tree canopy, then rests on the ground until eaten
     let fi = 0;
@@ -770,6 +879,7 @@ export class ThreeRenderer implements IRenderer {
     }
 
     this.updateSelection(world);
+    this.updateSector(world);
 
     this.renderer.render(this.scene, this.camera);
   }

@@ -9,5 +9,7 @@ export interface IRenderer {
   reset?(): void; // rebuild scenery after a world reset/snapshot load
   setPickHandler?(cb: (id: number | null) => void): void; // click-to-select an animal
   setSelected?(id: number | null): void; // highlight + track an entity with a placemark
+  setZoom?(zoom: number): void; // camera zoom factor (1 = whole field framed)
+  setSector?(sector: { name: string; cx: number; cy: number; r: number } | null): void; // highlight a map region
   dispose?(): void;
 }

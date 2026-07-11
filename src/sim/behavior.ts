@@ -96,6 +96,22 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
     return;
   }
 
+  // ducks live on the water: paddle gently, steering back toward the centre near
+  // the shore (the world clamps them inside the lagoon as a backstop)
+  if (a.species === 'duck') {
+    a.wander += ctx.rng.range(-0.9, 0.9) * ctx.dt;
+    const dspd = spd * (0.5 + 0.5 * Math.abs(Math.sin(a.age * 0.5)));
+    const ox = a.x - ctx.pond.x, oy = a.y - ctx.pond.y;
+    if (Math.hypot(ox, oy) > ctx.pond.r * 0.7) {
+      accelerateTowards(a, ctx.pond.x, ctx.pond.y, dspd, ctx.dt);
+    } else {
+      const k = Math.min(1, ctx.dt * 1.2);
+      a.vx += (Math.cos(a.wander) * dspd * 0.6 - a.vx) * k;
+      a.vy += (Math.sin(a.wander) * dspd * 0.6 - a.vy) * k;
+    }
+    return;
+  }
+
   // land animals never enter the lagoon — they turn back at the shore
   const px = a.x - ctx.pond.x, py = a.y - ctx.pond.y;
   const pd = Math.hypot(px, py);
