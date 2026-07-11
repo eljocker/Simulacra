@@ -7,6 +7,43 @@ import { Bitacora } from './Bitacora.tsx';
 export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [engine, setEngine] = useState<Engine | null>(null);
+  const [gallery, setGallery] = useState(false);
+
+  // Gallery / zero-player mode: hide the whole UI so it reads as a living painting.
+  useEffect(() => {
+    document.body.classList.toggle('gallery', gallery);
+  }, [gallery]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+      if (e.key === 'g' || e.key === 'G') { e.preventDefault(); setGallery((v) => !v); }
+      else if (e.key === 'Escape') setGallery(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // in gallery mode, fade the cursor + exit button away when the viewer is idle
+  useEffect(() => {
+    if (!gallery) { document.body.classList.remove('idle'); return; }
+    let t = 0;
+    const bump = () => {
+      document.body.classList.remove('idle');
+      clearTimeout(t);
+      t = window.setTimeout(() => document.body.classList.add('idle'), 2600);
+    };
+    window.addEventListener('mousemove', bump);
+    window.addEventListener('pointerdown', bump);
+    bump();
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('mousemove', bump);
+      window.removeEventListener('pointerdown', bump);
+      document.body.classList.remove('idle');
+    };
+  }, [gallery]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -43,6 +80,13 @@ export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
       <div className="toolhint">
         <b>Arrastrá</b> para girar la vista · <b>rueda</b> para zoom · <b>flechas</b> para ajustar
       </div>
+      <button
+        className={`gallery-btn${gallery ? ' exit' : ''}`}
+        onClick={() => setGallery((v) => !v)}
+        title="Modo galería (tecla G)"
+      >
+        {gallery ? '✕ Salir · G' : '⛶ Modo galería'}
+      </button>
     </>
   );
 }
