@@ -8,6 +8,13 @@ import { AUTOSAVE_ID, deleteSnapshot, getSnapshot, listSnapshots, putSnapshot, t
 export type RendererFactory = (canvas: HTMLCanvasElement) => IRenderer;
 const default2D: RendererFactory = (c) => new Renderer(c);
 
+// fraction of the real day (local time) — drives the sun so it's aligned to the
+// actual hour of day. Independent of the sim speed (which paces the ecosystem).
+function realClockFraction(): number {
+  const d = new Date();
+  return (d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000) / 86400;
+}
+
 const FIXED = 1 / 60;
 const HISTORY_MAX = 200;
 const AUTOSAVE_EVERY = 15; // seconds of real time
@@ -45,6 +52,7 @@ export class Engine {
       let real = (now - this.last) / 1000;
       this.last = now;
       if (real > 0.1) real = 0.1;
+      this.world.clock = realClockFraction(); // sun follows the real hour of day
       if (this.running) {
         let dt = real * this.speed;
         while (dt > 0) {
@@ -58,7 +66,7 @@ export class Engine {
       this.renderer.draw(this.world);
       if (this.statAcc >= 0.25) {
         this.statAcc = 0;
-        this.store.setStats(this.world.stats(), this.history);
+        this.store.setStats(this.world.stats(), this.history, this.world.events);
       }
       if (this.histAcc >= 1) {
         this.histAcc = 0;
@@ -100,7 +108,7 @@ export class Engine {
     this.world.seed();
     this.history = [];
     this.renderer.reset?.();
-    this.store.setStats(this.world.stats(), this.history);
+    this.store.setStats(this.world.stats(), this.history, this.world.events);
   }
   intervene(iv: Intervention): void {
     this.world.applyIntervention(iv);
@@ -111,7 +119,7 @@ export class Engine {
     this.world.load(snap);
     this.history = [];
     this.renderer.reset?.();
-    this.store.setStats(this.world.stats(), this.history);
+    this.store.setStats(this.world.stats(), this.history, this.world.events);
   }
 
   async saveAuto(): Promise<void> {

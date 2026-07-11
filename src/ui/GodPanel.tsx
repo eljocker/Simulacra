@@ -48,10 +48,10 @@ export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
           <button className="b" onClick={() => engine.reset()}>↺ Reiniciar</button>
         </div>
         <div className="speed">
-          <span className="lab">Tiempo</span>
-          <input type="range" min={0.25} max={3} step={0.25} value={ui.speed}
+          <span className="lab">Ritmo</span>
+          <input type="range" min={0.5} max={8} step={0.5} value={ui.speed}
             onChange={(e) => engine.setSpeed(parseFloat(e.target.value))} />
-          <span className="val">{ui.speed.toFixed(2)}×</span>
+          <span className="val">{ui.speed}×</span>
         </div>
 
         <div className="group" style={{ marginTop: 15 }}>

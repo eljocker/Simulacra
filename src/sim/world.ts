@@ -1,11 +1,11 @@
-import type { Animal, Effect, Grain, Intervention, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
+import type { Animal, Effect, Grain, Intervention, LifeEvent, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
 import { SPECIES, HERBIVORES } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
 import { GrassField } from './grass.ts';
 import { steer, type BehaviorCtx } from './behavior.ts';
 
-const DAY_LENGTH = 96; // seconds per in-sim day
+const EVENT_CAP = 300;
 
 export class World {
   w: number;
@@ -15,14 +15,21 @@ export class World {
   grass: GrassField;
   grain: Grain[] = [];
   effects: Effect[] = [];
+  events: LifeEvent[] = []; // the world's log book (newest at the end)
   weather: Weather = 'clear';
   weatherTimer = 0;
-  clock = 0.25; // start mid-morning
+  clock = 0.5; // time-of-day fraction; the engine drives it from the real clock
   day = 1;
   born = 0;
   died = 0;
   private nextId = 1;
+  private evSeq = 0;
   private rescueTimer = 0;
+
+  private logEvent(e: Omit<LifeEvent, 'seq' | 'clock'>): void {
+    this.events.push({ seq: this.evSeq++, clock: this.clock, ...e });
+    if (this.events.length > EVENT_CAP) this.events.shift();
+  }
 
   constructor(w: number, h: number, seed = 1) {
     this.w = w;
@@ -47,10 +54,12 @@ export class World {
     this.animals = [];
     this.grain = [];
     this.effects = [];
+    this.events = [];
+    this.evSeq = 0;
     this.grass.seed(this.rng);
     this.weather = 'clear';
     this.weatherTimer = 0;
-    this.clock = 0.25;
+    this.clock = 0.5;
     this.day = 1;
     this.born = 0;
     this.died = 0;
@@ -93,17 +102,13 @@ export class World {
   }
 
   private nightFactor(): number {
-    // smooth darkness: full night ~clock 0.85..0.12
-    const c = this.clock;
-    if (c > 0.80) return Math.min(1, (c - 0.80) / 0.08);
-    if (c < 0.16) return Math.min(1, (0.16 - c) / 0.08);
-    return 0;
+    // darkness follows the sun's height, so night and the sun are always in sync
+    const elev = Math.sin(this.clock * Math.PI * 2 - Math.PI / 2);
+    return Math.max(0, Math.min(1, (0.12 - elev) / 0.24));
   }
 
   tick(dt: number): void {
-    // clock + weather
-    this.clock += dt / DAY_LENGTH;
-    if (this.clock >= 1) { this.clock -= 1; this.day++; }
+    // clock is set externally (real time); here we only run weather + ecosystem
     if (this.weatherTimer > 0) {
       this.weatherTimer -= dt;
       if (this.weatherTimer <= 0) this.weather = 'clear';
@@ -181,9 +186,11 @@ export class World {
         if (prey) {
           dead.add(prey.id);
           pop[prey.species]--;
+          this.died++;
           a.energy += def.catchEnergy;
           a.flash = 0.3;
           this.effects.push({ x: prey.x, y: prey.y, t: 0, life: 0.5, kind: 'death', color: SPECIES[prey.species].color });
+          this.logEvent({ kind: 'death', species: prey.species, id: prey.id, cause: 'cazado', by: a.id, age: prey.age });
         }
       }
 
@@ -198,13 +205,16 @@ export class World {
         pop[a.species]++;
         this.born++;
         this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.6, kind: 'heart', color: '#ff77aa' });
+        this.logEvent({ kind: 'birth', species: a.species, id: child.id, parent: a.id });
       }
 
-      // death
+      // death (natural: starvation, illness or old age)
       if (a.energy <= 0 || a.age > def.maxAge) {
         dead.add(a.id);
         pop[a.species]--;
         this.died++;
+        const cause = a.age > def.maxAge ? 'vejez' : a.sick > 0 ? 'peste' : 'hambre';
+        this.logEvent({ kind: 'death', species: a.species, id: a.id, cause, age: a.age });
         this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.5, kind: 'death', color: def.color });
       }
     }
@@ -233,6 +243,7 @@ export class World {
             const a = this.make(sp, this.rng.range(30, this.w - 30), this.rng.range(30, this.h - 30));
             a.born = 1;
             this.animals.push(a);
+            this.logEvent({ kind: 'birth', species: sp, id: a.id, cause: 'llegada' });
           }
         }
       }
@@ -243,6 +254,7 @@ export class World {
           const f = this.make('fox', this.rng.range(30, this.w - 30), this.rng.range(30, this.h - 30));
           f.born = 1;
           this.animals.push(f);
+          this.logEvent({ kind: 'birth', species: 'fox', id: f.id, cause: 'llegada' });
         }
       }
     }
@@ -250,9 +262,9 @@ export class World {
 
   applyIntervention(iv: Intervention): void {
     switch (iv.kind) {
-      case 'rain': this.weather = 'rain'; this.weatherTimer = 22; break;
-      case 'drought': this.weather = 'drought'; this.weatherTimer = 22; break;
-      case 'clear': this.weather = 'clear'; this.weatherTimer = 0; break;
+      case 'rain': this.weather = 'rain'; this.weatherTimer = 22; this.logEvent({ kind: 'divine', cause: 'lluvia' }); break;
+      case 'drought': this.weather = 'drought'; this.weatherTimer = 22; this.logEvent({ kind: 'divine', cause: 'sequía' }); break;
+      case 'clear': this.weather = 'clear'; this.weatherTimer = 0; this.logEvent({ kind: 'divine', cause: 'sol' }); break;
       case 'spawn': {
         const n = iv.n ?? 1;
         for (let i = 0; i < n; i++) {
@@ -262,6 +274,7 @@ export class World {
           a.born = 0;
           this.animals.push(a);
           this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.5, kind: 'birth', color: SPECIES[iv.species].color });
+          this.logEvent({ kind: 'birth', species: iv.species, id: a.id, cause: 'divino' });
         }
         break;
       }
@@ -273,21 +286,31 @@ export class World {
           a.sick = 0;
           this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.7, kind: 'heart', color: '#ffd166' });
         }
+        this.logEvent({ kind: 'divine', cause: 'bendición' });
         break;
       }
       case 'plague': {
-        for (const a of this.animals) if (this.rng.chance(0.38)) a.sick = this.rng.range(6, 12);
+        let n = 0;
+        for (const a of this.animals) if (this.rng.chance(0.38)) { a.sick = this.rng.range(6, 12); n++; }
+        this.logEvent({ kind: 'divine', cause: 'peste', by: n });
         break;
       }
       case 'meteor': {
         const mx = iv.x ?? this.rng.range(60, this.w - 60);
         const my = iv.y ?? this.rng.range(60, this.h - 60);
         const R = 120;
+        const survivors: Animal[] = [];
         for (const a of this.animals) {
-          if ((a.x - mx) ** 2 + (a.y - my) ** 2 < R * R) a.energy = -1;
+          if ((a.x - mx) ** 2 + (a.y - my) ** 2 < R * R) {
+            this.died++;
+            this.logEvent({ kind: 'death', species: a.species, id: a.id, cause: 'meteorito', age: a.age });
+            this.effects.push({ x: a.x, y: a.y, t: 0, life: 0.5, kind: 'death', color: SPECIES[a.species].color });
+          } else survivors.push(a);
         }
+        this.animals = survivors;
         this.grass.scorch(mx, my, R);
         this.effects.push({ x: mx, y: my, t: 0, life: 0.6, kind: 'meteor', color: '#ff8a3d' });
+        this.logEvent({ kind: 'divine', cause: 'meteorito' });
         break;
       }
       case 'feed': {
@@ -296,6 +319,7 @@ export class World {
         for (let i = 0; i < 6; i++) {
           this.grain.push({ x: fx + this.rng.range(-26, 26), y: fy + this.rng.range(-26, 26), amount: this.rng.range(30, 55) });
         }
+        this.logEvent({ kind: 'divine', cause: 'alimento' });
         break;
       }
     }
@@ -328,6 +352,8 @@ export class World {
       animals: this.animals.map((a) => ({ ...a, genes: { ...a.genes } })),
       grain: this.grain.map((g) => ({ ...g })),
       grass: this.grass.toJSON(),
+      events: this.events.map((e) => ({ ...e })),
+      evSeq: this.evSeq,
     };
   }
 
@@ -340,6 +366,8 @@ export class World {
     this.animals = s.animals.map((a) => ({ ...a, genes: { ...a.genes } }));
     this.grain = s.grain.map((g) => ({ ...g }));
     this.grass.load(s.grass);
+    this.events = (s.events ?? []).map((e) => ({ ...e }));
+    this.evSeq = s.evSeq ?? 0;
     this.effects = [];
     this.rescueTimer = 0;
   }

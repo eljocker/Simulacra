@@ -48,9 +48,9 @@ const GEO: Record<SpeciesId, () => THREE.BufferGeometry> = { chicken: chickenGeo
 const COLOR: Record<SpeciesId, number> = { chicken: 0xf4d35e, sheep: 0xeef0f2, cow: 0xdadfe3, fox: 0xe8712f };
 
 function nightFactor(clock: number): number {
-  if (clock > 0.8) return Math.min(1, (clock - 0.8) / 0.08);
-  if (clock < 0.16) return Math.min(1, (0.16 - clock) / 0.08);
-  return 0;
+  // coupled to the sun's height so darkness and the sun are always in sync
+  const elev = Math.sin(clock * Math.PI * 2 - Math.PI / 2);
+  return Math.max(0, Math.min(1, (0.12 - elev) / 0.24));
 }
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);

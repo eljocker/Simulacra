@@ -48,6 +48,21 @@ export type Intervention =
   | { kind: 'meteor'; x?: number; y?: number }
   | { kind: 'feed'; x?: number; y?: number };
 
+export type LifeEventKind = 'birth' | 'death' | 'divine';
+
+// One entry in the world's log — a life story is the events sharing an `id`.
+export interface LifeEvent {
+  seq: number; // monotonic order
+  clock: number; // time-of-day fraction when it happened
+  kind: LifeEventKind;
+  species?: SpeciesId;
+  id?: number; // the entity this is about
+  cause?: string; // deaths: 'hambre'|'vejez'|'cazado'|'peste'|'meteorito'; births/divine: origin
+  parent?: number; // births by reproduction
+  by?: number; // hunted: the predator
+  age?: number; // deaths: age reached (s)
+}
+
 export interface WorldSnapshot {
   v: 1;
   w: number;
@@ -63,6 +78,8 @@ export interface WorldSnapshot {
   animals: Animal[];
   grain: Grain[];
   grass: import('./grass.ts').GrassSnapshot;
+  events: LifeEvent[];
+  evSeq: number;
 }
 
 export interface Grain {

@@ -1,11 +1,15 @@
 import type { Stats } from '../sim/types.ts';
 
 function timeOfDay(clock: number): { label: string; icon: string } {
-  if (clock < 0.12 || clock >= 0.86) return { label: 'Noche', icon: '🌙' };
-  if (clock < 0.22) return { label: 'Amanecer', icon: '🌅' };
-  if (clock < 0.55) return { label: 'Mañana', icon: '☀️' };
-  if (clock < 0.72) return { label: 'Tarde', icon: '🌤️' };
+  if (clock < 0.1 || clock >= 0.88) return { label: 'Noche', icon: '🌙' };
+  if (clock < 0.3) return { label: 'Amanecer', icon: '🌅' };
+  if (clock < 0.5) return { label: 'Mañana', icon: '☀️' };
+  if (clock < 0.7) return { label: 'Tarde', icon: '🌤️' };
   return { label: 'Atardecer', icon: '🌇' };
+}
+function formatClock(f: number): string {
+  const total = Math.floor(f * 1440);
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 const WEATHER: Record<Stats['weather'], string> = { clear: '☀️ Despejado', rain: '🌧️ Lluvia', drought: '🏜️ Sequía' };
 
@@ -20,7 +24,7 @@ export function HUD({ stats }: { stats: Stats }) {
   return (
     <div className="hud">
       <div className="clock">
-        <span className="day">Día {stats.day}</span>
+        <span className="day">🕐 {formatClock(stats.clock)}</span>
         <span className="tod">{tod.icon} {tod.label}</span>
       </div>
       <div className="rows">

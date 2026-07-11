@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Engine, type RendererFactory } from '../engine/loop.ts';
 import { HUD } from './HUD.tsx';
 import { GodPanel } from './GodPanel.tsx';
+import { Bitacora } from './Bitacora.tsx';
 
 export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,6 +52,7 @@ function Connected({ engine }: { engine: Engine }) {
   return (
     <>
       <HUD stats={ui.stats} />
+      <Bitacora events={ui.events} />
       <GodPanel engine={engine} ui={ui} />
     </>
   );

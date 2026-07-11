@@ -208,6 +208,38 @@ button.mini.danger:hover { background: var(--barn); color: #fff; }
 }
 .toolhint b { color: #ffe08a; }
 
+/* bitácora (right side, below HUD) */
+.bitacora {
+  position: fixed;
+  top: 252px; right: 18px;
+  z-index: 6;
+  width: min(288px, calc(100vw - 36px));
+  background: var(--paper);
+  backdrop-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.bit-head { display: flex; align-items: center; gap: 9px; padding: 11px 14px; cursor: pointer; user-select: none; border-bottom: 1px solid var(--line); }
+.bitacora.closed .bit-head { border-bottom-color: transparent; }
+.bit-title { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); flex: 1; }
+.bit-count { font-family: var(--mono); font-size: 10px; color: #fff; background: var(--ink-soft); border-radius: 10px; padding: 1px 8px; font-variant-numeric: tabular-nums; }
+.bitacora .chev { color: var(--ink-soft); transition: transform 0.3s; font-size: 12px; }
+.bitacora.closed .chev { transform: rotate(180deg); }
+.bit-body { max-height: min(46vh, 430px); overflow-y: auto; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.bit-empty { font-size: 11px; color: var(--ink-soft); padding: 10px; line-height: 1.5; }
+.bit-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; font-size: 12px; }
+.bit-row + .bit-row { margin-top: 2px; }
+.bit-row.birth { background: rgba(79, 143, 58, 0.09); }
+.bit-row.death { background: rgba(194, 80, 60, 0.08); }
+.bit-row.divine { background: rgba(207, 156, 30, 0.12); }
+.bit-ic { font-size: 15px; width: 20px; text-align: center; flex: none; }
+.bit-txt { flex: 1; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bit-txt b { font-weight: 700; }
+.bit-time { font-family: var(--mono); font-size: 10px; color: var(--ink-soft); flex: none; font-variant-numeric: tabular-nums; }
+
 @media (max-height: 820px) { .masthead .dek { display: none; } }
 @media (max-width: 640px) {
   .masthead { padding: 15px 17px; }
