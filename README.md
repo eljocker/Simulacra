@@ -7,6 +7,12 @@ peste, suelta un zorro o arrasa un rincón con un meteorito.
 
 **En vivo:** https://eljocker.github.io/Simulacra
 
+## Documentación
+
+- [`docs/BRIEF.md`](docs/BRIEF.md) — documento de concepto y requerimientos (la visión).
+- [`docs/GUIA-DESARROLLO.md`](docs/GUIA-DESARROLLO.md) — guía de desarrollo: cómo el
+  código actual mapea a esa visión y los próximos pasos.
+
 ## Stack
 
 Proyecto moderno, separado por responsabilidades:
