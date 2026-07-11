@@ -14,6 +14,7 @@ export interface BehaviorCtx {
   night: number; // 0 = day, 1 = deep night
   w: number;
   h: number;
+  claimed: Set<number>; // prey already targeted this tick, so predators don't pile on one
 }
 
 // Ease velocity toward a target. `arrive` > 0 makes the animal slow to a stop as
@@ -46,12 +47,12 @@ function roam(a: Animal, spd: number, dt: number, rng: RNG): void {
 function flock(a: Animal, spd: number, ctx: BehaviorCtx): void {
   const R = a.genes.sense * 0.8;
   let cx = 0, cy = 0, sx = 0, sy = 0, hx = 0, hy = 0, n = 0;
-  const near = a.genes.size * 2.6;
+  const near = a.genes.size * 4.5; // personal-space radius — keeps a visible gap
   ctx.grid.forEachNear(a.x, a.y, R, (o) => o.species === a.species, a, (o, d2) => {
     cx += o.x; cy += o.y;
     hx += Math.cos(o.heading); hy += Math.sin(o.heading);
     const dist = Math.sqrt(d2) || 1;
-    if (dist < near) { sx += (a.x - o.x) / dist; sy += (a.y - o.y) / dist; } // separation
+    if (dist < near) { const push = (near - dist) / near; sx += ((a.x - o.x) / dist) * push; sy += ((a.y - o.y) / dist) * push; } // separation, stronger up close
     n++;
   });
   // wander is always consumed (one RNG draw per idle steer, flocking or not)
@@ -63,9 +64,9 @@ function flock(a: Animal, spd: number, ctx: BehaviorCtx): void {
     a.vy += (wy * spd * 0.42 - a.vy) * k;
     return;
   }
-  let dxv = wx * 0.5 + sx * 1.15, dyv = wy * 0.5 + sy * 1.15; // wander + separation
+  let dxv = wx * 0.5 + sx * 2.4, dyv = wy * 0.5 + sy * 2.4; // wander + separation (dominant up close)
   const coh = Math.hypot(cx / n - a.x, cy / n - a.y) || 1;    // cohesion (toward centre)
-  dxv += ((cx / n - a.x) / coh) * 0.6; dyv += ((cy / n - a.y) / coh) * 0.6;
+  dxv += ((cx / n - a.x) / coh) * 0.5; dyv += ((cy / n - a.y) / coh) * 0.5;
   const al = Math.hypot(hx, hy) || 1;                          // alignment
   dxv += (hx / al) * 0.25; dyv += (hy / al) * 0.25;
   const dl = Math.hypot(dxv, dyv) || 1;
@@ -81,8 +82,10 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
   const spd = a.genes.speed * nightSlow;
 
   if (def.diet === 'carnivore') {
-    const prey = ctx.grid.nearest(a.x, a.y, a.genes.sense, (o) => def.preys.includes(o.species), a);
-    if (prey) accelerateTowards(a, prey.x, prey.y, spd, ctx.dt, false, a.genes.size + 12);
+    // each predator claims a DIFFERENT prey so they spread out instead of
+    // stacking on the same target (which read as ghosting)
+    const prey = ctx.grid.nearest(a.x, a.y, a.genes.sense, (o) => def.preys.includes(o.species) && !ctx.claimed.has(o.id), a);
+    if (prey) { ctx.claimed.add(prey.id); accelerateTowards(a, prey.x, prey.y, spd, ctx.dt, false, a.genes.size + 12); }
     else roam(a, spd, ctx.dt, ctx.rng);
     return;
   }

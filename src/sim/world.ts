@@ -135,7 +135,7 @@ export class World {
     const grid = new SpatialGrid(this.w, this.h, 96);
     for (const a of this.animals) grid.insert(a);
 
-    const ctx: BehaviorCtx = { grid, grass: this.grass, grain: this.grain, rng: this.rng, dt, night, w: this.w, h: this.h };
+    const ctx: BehaviorCtx = { grid, grass: this.grass, grain: this.grain, rng: this.rng, dt, night, w: this.w, h: this.h, claimed: new Set<number>() };
 
     const newborns: Animal[] = [];
     const dead = new Set<number>();
