@@ -61,7 +61,7 @@ export class Engine {
   private selectedInfo(): SelectedInfo | null {
     if (!this.selected) return null;
     const a = this.world.animals.find((x) => x.id === this.selected!.id);
-    if (a) return { id: a.id, species: a.species, alive: true, age: a.age, energy: a.energy, genes: { ...a.genes } };
+    if (a) return { id: a.id, species: a.species, alive: true, age: a.age, energy: a.energy, genes: { ...a.genes }, eating: a.eating > 0 };
     return { id: this.selected.id, species: this.selected.species, alive: false };
   }
   private pushStats(): void {

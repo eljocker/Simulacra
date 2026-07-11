@@ -1,7 +1,7 @@
 import type { Engine } from '../engine/loop.ts';
 import type { LifeEvent, SpeciesId } from '../sim/types.ts';
 import type { SelectedInfo } from '../engine/store.ts';
-import { growthFactor, lifeStage } from '../sim/species.ts';
+import { fullness, growthFactor, hungerLabel, lifeStage } from '../sim/species.ts';
 
 const SP: Record<SpeciesId, { n: string; e: string; diet: string }> = {
   chicken: { n: 'Gallina', e: '🐔', diet: 'Herbívora · pica pasto' },
@@ -68,7 +68,24 @@ export function Ficha({ engine, selected, events }: { engine: Engine; selected: 
 
       {selected.alive && (
         <div className="fk-stats">
-          <Bar label="Energía" v={selected.energy ?? 0} max={100} color="var(--grass)" />
+          {(() => {
+            const energy = selected.energy ?? 0;
+            const f = fullness(selected.species, energy);
+            const hl = hungerLabel(selected.species, energy);
+            const col = hl.tone === 'crit' ? '#c2503c' : hl.tone === 'low' ? '#e0a13a' : 'var(--grass)';
+            return (
+              <>
+                <div className="fk-bar">
+                  <span className="fk-bl">Energía</span>
+                  <span className="fk-track"><span className="fk-fill" style={{ width: `${Math.round(f * 100)}%`, background: col }} /></span>
+                </div>
+                <div className="fk-hunger">
+                  <span className={`fk-hstate ${hl.tone}`}>{hl.emoji} {hl.label}</span>
+                  {selected.eating && <span className="fk-eat">🍽 Comiendo</span>}
+                </div>
+              </>
+            );
+          })()}
           {(() => {
             const age = selected.age ?? 0;
             const stage = lifeStage(selected.species, age);

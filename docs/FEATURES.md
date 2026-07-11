@@ -174,6 +174,10 @@
 - Ciclo de vida (E1–E5): crecimiento por edad, huevos con gestación, bandadas,
   buitres carroñeros mortales, regla del agua + patos acuáticos.
 - Depredadores reclaman presas distintas (no se enciman).
+- Hambre y comida reales: energía por especie visible en la Ficha (estado de
+  hambre), acto de comer visible (pose de pastoreo + bocado), frutas
+  (manzanas/moras) que caen de los árboles como comida del entorno, y muerte por
+  hambre cuando la energía llega a cero.
 - **Inspeccionar un ser con clic** → Ficha con energía, edad, genes e historia.
 - Modo galería / *zero-player* (tecla **G**).
 - Ritmo del ecosistema ajustable (0.5×–8×) desacoplado del reloj del cielo.

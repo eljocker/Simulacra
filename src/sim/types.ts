@@ -23,6 +23,7 @@ export interface Animal {
   flash: number; // eat / hit feedback (s)
   sick: number; // disease timer (s), 0 = healthy
   wander: number; // wander heading bias
+  eating: number; // >0 while actively feeding (drives the grazing pose + munch cue)
 }
 
 export interface Stats {
@@ -82,6 +83,8 @@ export interface WorldSnapshot {
   scavengers: Scavenger[];
   ducks: Duck[];
   grain: Grain[];
+  fruits: Fruit[];
+  fruitTimer: number;
   grass: import('./grass.ts').GrassSnapshot;
   events: LifeEvent[];
   evSeq: number;
@@ -91,6 +94,16 @@ export interface Grain {
   x: number;
   y: number;
   amount: number;
+}
+
+// A fruit fallen from a tree (apple/berry) — real edible food in the environment,
+// for animals that don't live on grass. Falls, rests, and rots if not eaten.
+export interface Fruit {
+  x: number;
+  y: number;
+  amount: number; // energy it provides
+  t: number; // age (s) — drives the fall animation, then the rot timeout
+  kind: 'apple' | 'berry';
 }
 
 // A chicken egg incubating on the ground before it hatches into a chick.

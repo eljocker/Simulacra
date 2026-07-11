@@ -140,9 +140,11 @@ export class ThreeRenderer implements IRenderer {
   private foot = {} as Record<SpeciesId, number>; // -min.y of each model: how high to sit it so its feet rest on the ground
   private lieHalf = {} as Record<SpeciesId, number>; // resting height once tipped on its side
   private dummy = new THREE.Object3D();
+  private tmpColor = new THREE.Color();
   private rain: THREE.Points;
   private eggMesh: THREE.InstancedMesh; // incubating chicken eggs
   private duckMesh: THREE.InstancedMesh; // ducks floating on the pond
+  private fruitMesh: THREE.InstancedMesh; // apples/berries fallen from the trees
   private clouds: THREE.Sprite[] = [];
   private foliage: THREE.Object3D[] = []; // tree crowns, swayed by wind
   private angelTex = makeAngelTexture();
@@ -258,6 +260,13 @@ export class ThreeRenderer implements IRenderer {
     this.duckMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.duckMesh.count = 0;
     this.scene.add(this.duckMesh);
+
+    // fruit: a small berry-sized sphere, per-instance colour (apple red / berry purple)
+    this.fruitMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.5, 7, 5), new THREE.MeshStandardMaterial({ flatShading: true, roughness: 0.6 }), 32);
+    this.fruitMesh.frustumCulled = false;
+    this.fruitMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.fruitMesh.count = 0;
+    this.scene.add(this.fruitMesh);
 
     // drifting procedural clouds (the brief's "anti-loop": the sky never repeats)
     const cloudTex = makeCloudTexture();
@@ -435,14 +444,11 @@ export class ThreeRenderer implements IRenderer {
     pond.position.set(this.pondC.x, this.pondY, this.pondC.z);
     this.scenery.add(pond);
 
-    // trees — deterministic scatter (no RNG); crowns collected for wind sway
+    // trees — positions come from the sim now (so fruit falls from real trees);
+    // crowns collected for wind sway
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, flatShading: true });
     const leafMat = new THREE.MeshStandardMaterial({ color: 0x3f7a34, flatShading: true });
-    for (let i = 0; i < 11; i++) {
-      const fx = (Math.sin(i * 12.9898) * 43758.5453) % 1;
-      const fy = (Math.sin(i * 78.233) * 12543.128) % 1;
-      const x = (Math.abs(fx) * 0.82 + 0.09) * world.w;
-      const y = (Math.abs(fy) * 0.82 + 0.09) * world.h;
+    world.trees.forEach((tr, i) => {
       const t = new THREE.Group();
       const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.2, 6), trunkMat);
       trunk.position.y = 0.6;
@@ -450,11 +456,11 @@ export class ThreeRenderer implements IRenderer {
       leaves.position.y = 1.7;
       leaves.userData.phase = i * 1.7;
       this.foliage.push(leaves);
-      t.scale.setScalar(0.8 + Math.abs(fx) * 0.8);
+      t.scale.setScalar(tr.scale);
       t.add(trunk, leaves);
-      t.position.copy(toScene(x, y));
+      t.position.copy(toScene(tr.x, tr.y));
       this.scenery.add(t);
-    }
+    });
 
     // rocks for a bit of texture
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x8a8f92, flatShading: true });
@@ -505,6 +511,8 @@ export class ThreeRenderer implements IRenderer {
       const sx = (a.x - world.w / 2) * SC, sz = (a.y - world.h / 2) * SC;
       this.dummy.position.set(sx, this.terrainY(sx, sz) + this.foot[a.species] * s, sz);
       this.dummy.rotation.set(0, -a.heading, 0);
+      // eating: dip the nose toward the ground with a little chewing bob
+      if (a.eating > 0) this.dummy.rotateZ(-(0.32 + Math.sin(this.t * 0.5 + a.id) * 0.08));
       this.dummy.scale.setScalar(s);
       this.dummy.updateMatrix();
       im.setMatrixAt(i, this.dummy.matrix);
@@ -572,6 +580,25 @@ export class ThreeRenderer implements IRenderer {
     }
     this.duckMesh.count = di;
     this.duckMesh.instanceMatrix.needsUpdate = true;
+
+    // fruit — falls from the tree canopy, then rests on the ground until eaten
+    let fi = 0;
+    for (const fr of world.fruits) {
+      if (fi >= 32) break;
+      const sx = (fr.x - world.w / 2) * SC, sz = (fr.y - world.h / 2) * SC;
+      const groundY = this.terrainY(sx, sz) + 0.16;
+      const fall = fr.t < 0.6 ? (1 - fr.t / 0.6) * 2.4 : 0; // drop from the canopy
+      this.dummy.position.set(sx, groundY + fall, sz);
+      this.dummy.rotation.set(0, fr.x + fr.y, 0);
+      this.dummy.scale.setScalar(0.42);
+      this.dummy.updateMatrix();
+      this.fruitMesh.setMatrixAt(fi, this.dummy.matrix);
+      this.fruitMesh.setColorAt(fi, this.tmpColor.set(fr.kind === 'apple' ? 0xd8402e : 0x8046b0));
+      fi++;
+    }
+    this.fruitMesh.count = fi;
+    this.fruitMesh.instanceMatrix.needsUpdate = true;
+    if (this.fruitMesh.instanceColor) this.fruitMesh.instanceColor.needsUpdate = true;
 
     // day / night
     const n = nightFactor(world.clock);

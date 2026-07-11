@@ -9,6 +9,7 @@ export interface SelectedInfo {
   age?: number;
   energy?: number;
   genes?: Genes;
+  eating?: boolean;
 }
 
 export interface UIState {

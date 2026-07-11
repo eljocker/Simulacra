@@ -65,6 +65,21 @@ export function growthFactor(species: SpeciesId, age: number): number {
   return NEWBORN_SCALE + (1 - NEWBORN_SCALE) * eased;
 }
 
+// How full a creature is, 0..1, relative to its own breeding-full energy — so the
+// Ficha shows hunger meaningfully across species with very different energy scales.
+export function fullness(species: SpeciesId, energy: number): number {
+  return Math.max(0, Math.min(1, energy / SPECIES[species].reproduceAt));
+}
+
+// A human hunger label for the Ficha, from the fullness above.
+export function hungerLabel(species: SpeciesId, energy: number): { label: string; emoji: string; tone: 'ok' | 'low' | 'crit' } {
+  const f = fullness(species, energy);
+  if (f > 0.7) return { label: 'Bien alimentado', emoji: '😌', tone: 'ok' };
+  if (f > 0.4) return { label: 'Buscando comida', emoji: '🌾', tone: 'ok' };
+  if (f > 0.18) return { label: 'Con hambre', emoji: '😟', tone: 'low' };
+  return { label: 'Hambriento', emoji: '⚠️', tone: 'crit' };
+}
+
 // A human label for how grown a creature is (for the Ficha).
 export function lifeStage(species: SpeciesId, age: number): { label: string; emoji: string } {
   const g = growthFactor(species, age);

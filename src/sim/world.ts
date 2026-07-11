@@ -1,4 +1,4 @@
-import type { Animal, Corpse, Duck, Effect, Egg, Grain, Intervention, LifeEvent, Scavenger, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
+import type { Animal, Corpse, Duck, Effect, Egg, Fruit, Grain, Intervention, LifeEvent, Scavenger, SpeciesId, Stats, Weather, WorldSnapshot } from './types.ts';
 import { SPECIES, HERBIVORES } from './species.ts';
 import { RNG } from './rng.ts';
 import { SpatialGrid } from './grid.ts';
@@ -22,6 +22,11 @@ const SCAV_REPRO_AT = 150;
 const DUCK_MIN = 3;
 const DUCK_MAXAGE = 220;
 const DUCK_SPEED = 20;
+// fruit (apples fallen from trees — real edible food in the environment)
+const FRUIT_CAP = 18;
+const FRUIT_DROP_EVERY = 2.3; // a tree drops a fruit roughly this often
+const FRUIT_ENERGY = 46;
+const FRUIT_ROT = 55; // seconds before an uneaten fruit rots away
 
 export class World {
   w: number;
@@ -32,8 +37,11 @@ export class World {
   eggs: Egg[] = [];
   scavengers: Scavenger[] = [];
   ducks: Duck[] = [];
+  trees: { x: number; y: number; scale: number }[] = []; // deterministic; renderer draws these, fruit falls from them
   grass: GrassField;
   grain: Grain[] = [];
+  fruits: Fruit[] = [];
+  private fruitTimer = 0;
   effects: Effect[] = [];
   events: LifeEvent[] = []; // the world's log book (newest at the end)
   weather: Weather = 'clear';
@@ -199,6 +207,7 @@ export class World {
     this.rng = new RNG(seed);
     this.grass = new GrassField(w, h);
     this.computePond();
+    this.computeTrees();
   }
 
   // the lagoon is deterministic from the field size (matches the renderer exactly)
@@ -206,10 +215,24 @@ export class World {
     this.pond = { x: this.w * 0.82, y: this.h * 0.8, r: this.w * 0.09 };
   }
 
+  // deterministic tree scatter (same formula the renderer draws) — so fruit can
+  // fall from real trees and the sim & scene agree on where the trees are
+  private computeTrees(): void {
+    this.trees = [];
+    for (let i = 0; i < 11; i++) {
+      const fx = (Math.sin(i * 12.9898) * 43758.5453) % 1;
+      const fy = (Math.sin(i * 78.233) * 12543.128) % 1;
+      const x = (Math.abs(fx) * 0.82 + 0.09) * this.w;
+      const y = (Math.abs(fy) * 0.82 + 0.09) * this.h;
+      this.trees.push({ x, y, scale: 0.8 + Math.abs(fx) * 0.8 });
+    }
+  }
+
   resize(w: number, h: number): void {
     this.w = w;
     this.h = h;
     this.computePond();
+    this.computeTrees();
     const g = new GrassField(w, h);
     g.seed(this.rng);
     this.grass = g;
@@ -226,6 +249,8 @@ export class World {
     this.scavengers = [];
     this.ducks = [];
     this.grain = [];
+    this.fruits = [];
+    this.fruitTimer = 0;
     this.effects = [];
     this.events = [];
     this.evSeq = 0;
@@ -258,7 +283,7 @@ export class World {
     return {
       id: this.nextId++, species, x, y, vx: 0, vy: 0, heading: this.rng.range(0, 6.28),
       energy: def.e0, age: 0, genes: g, cooldown: def.cooldown * 0.5,
-      born: 0, flash: 0, sick: 0, wander: this.rng.range(0, 6.28),
+      born: 0, flash: 0, sick: 0, wander: this.rng.range(0, 6.28), eating: 0,
     };
   }
 
@@ -297,7 +322,7 @@ export class World {
     const grid = new SpatialGrid(this.w, this.h, 96);
     for (const a of this.animals) grid.insert(a);
 
-    const ctx: BehaviorCtx = { grid, grass: this.grass, grain: this.grain, rng: this.rng, dt, night, w: this.w, h: this.h, claimed: new Set<number>(), pond: this.pond };
+    const ctx: BehaviorCtx = { grid, grass: this.grass, grain: this.grain, fruits: this.fruits, rng: this.rng, dt, night, w: this.w, h: this.h, claimed: new Set<number>(), pond: this.pond };
 
     const newborns: Animal[] = [];
     const dead = new Set<number>();
@@ -315,6 +340,7 @@ export class World {
       a.cooldown -= dt;
       if (a.born < 1) a.born = Math.min(1, a.born + dt * 2.5);
       if (a.flash > 0) a.flash -= dt;
+      if (a.eating > 0) a.eating -= dt;
       if (a.sick > 0) a.sick = Math.max(0, a.sick - dt);
 
       steer(a, def, ctx);
@@ -344,9 +370,9 @@ export class World {
       a.energy -= (def.metabolism + def.moveCost * speed + (a.sick > 0 ? 2.4 : 0)) * dt;
 
       if (def.diet === 'herbivore') {
-        // graze grass under feet
+        // graze grass under feet — the "eating" pose shows only when it slows to feed
         const eaten = this.grass.graze(a.x, a.y, 1.4 * dt);
-        if (eaten > 0) a.energy += eaten * def.grazeGain;
+        if (eaten > 0) { a.energy += eaten * def.grazeGain; if (speed < 14) a.eating = 0.4; }
         // eat grain if close
         for (let i = this.grain.length - 1; i >= 0; i--) {
           const gr = this.grain[i];
@@ -354,8 +380,21 @@ export class World {
             const take = Math.min(gr.amount, 26);
             gr.amount -= take;
             a.energy += take;
-            a.flash = 0.25;
+            a.flash = 0.25; a.eating = 0.45;
             if (gr.amount <= 0) this.grain.splice(i, 1);
+            break;
+          }
+        }
+        // eat a fallen fruit if close AND not already full — so well-fed herds
+        // leave fruit lying in the environment for the hungry
+        for (let i = this.fruits.length - 1; a.energy < def.reproduceAt && i >= 0; i--) {
+          const fr = this.fruits[i];
+          if (fr.t < 0.5) continue; // still falling
+          if ((fr.x - a.x) ** 2 + (fr.y - a.y) ** 2 < (a.genes.size + 10) ** 2) {
+            a.energy += fr.amount;
+            a.flash = 0.3; a.eating = 0.5;
+            this.effects.push({ x: fr.x, y: fr.y, t: 0, life: 0.5, kind: 'heart', color: '#e0473a' });
+            this.fruits.splice(i, 1);
             break;
           }
         }
@@ -417,6 +456,22 @@ export class World {
     for (let i = this.grain.length - 1; i >= 0; i--) {
       this.grain[i].amount -= 1.5 * dt; // grain slowly spoils
       if (this.grain[i].amount <= 0) this.grain.splice(i, 1);
+    }
+    // trees drop fruit into the world; uneaten fruit ages and eventually rots away
+    this.fruitTimer += dt;
+    if (this.fruitTimer >= FRUIT_DROP_EVERY) {
+      this.fruitTimer = 0;
+      if (this.fruits.length < FRUIT_CAP && this.trees.length) {
+        const t = this.trees[(this.rng.range(0, this.trees.length)) | 0];
+        this.fruits.push({
+          x: t.x + this.rng.range(-14, 14) * t.scale, y: t.y + this.rng.range(-14, 14) * t.scale,
+          amount: FRUIT_ENERGY, t: 0, kind: this.rng.chance(0.5) ? 'apple' : 'berry',
+        });
+      }
+    }
+    for (let i = this.fruits.length - 1; i >= 0; i--) {
+      this.fruits[i].t += dt;
+      if (this.fruits[i].t >= FRUIT_ROT) this.fruits.splice(i, 1);
     }
     for (let i = this.effects.length - 1; i >= 0; i--) {
       this.effects[i].t += dt;
@@ -571,6 +626,8 @@ export class World {
       scavengers: this.scavengers.map((s) => ({ ...s })),
       ducks: this.ducks.map((d) => ({ ...d })),
       grain: this.grain.map((g) => ({ ...g })),
+      fruits: this.fruits.map((f) => ({ ...f })),
+      fruitTimer: this.fruitTimer,
       grass: this.grass.toJSON(),
       events: this.events.map((e) => ({ ...e })),
       evSeq: this.evSeq,
@@ -580,6 +637,7 @@ export class World {
   load(s: WorldSnapshot): void {
     this.w = s.w; this.h = s.h;
     this.computePond();
+    this.computeTrees();
     this.rng.setState(s.rng);
     this.nextId = s.nextId;
     this.clock = s.clock; this.day = s.day; this.born = s.born; this.died = s.died;
@@ -591,6 +649,8 @@ export class World {
     this.scavengers = (s.scavengers ?? []).map((sc) => ({ ...sc }));
     this.ducks = (s.ducks ?? []).map((d) => ({ ...d }));
     this.grain = s.grain.map((g) => ({ ...g }));
+    this.fruits = (s.fruits ?? []).map((f) => ({ ...f }));
+    this.fruitTimer = s.fruitTimer ?? 0;
     this.grass.load(s.grass);
     this.events = (s.events ?? []).map((e) => ({ ...e }));
     this.evSeq = s.evSeq ?? 0;

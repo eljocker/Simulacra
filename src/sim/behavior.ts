@@ -1,4 +1,4 @@
-import type { Animal, Grain } from './types.ts';
+import type { Animal, Fruit, Grain } from './types.ts';
 import type { SpeciesDef } from './species.ts';
 import { SPECIES } from './species.ts';
 import type { SpatialGrid } from './grid.ts';
@@ -9,6 +9,7 @@ export interface BehaviorCtx {
   grid: SpatialGrid;
   grass: GrassField;
   grain: Grain[];
+  fruits: Fruit[];
   rng: RNG;
   dt: number;
   night: number; // 0 = day, 1 = deep night
@@ -109,15 +110,20 @@ export function steer(a: Animal, def: SpeciesDef, ctx: BehaviorCtx): void {
       return;
     }
   }
-  // seek the nearest scattered grain, easing in so they don't pile-bounce on it
-  if (ctx.grain.length) {
-    let best: Grain | null = null;
-    let bd = a.genes.sense * a.genes.sense;
+  // when a bit hungry, seek the nearest food item — scattered grain or a fallen
+  // fruit — easing in so they don't pile-bounce on it
+  if (a.energy < def.reproduceAt * 0.9 && (ctx.grain.length || ctx.fruits.length)) {
+    let bx = 0, by = 0, bd = a.genes.sense * a.genes.sense, found = false;
     for (const g of ctx.grain) {
       const dd = (g.x - a.x) ** 2 + (g.y - a.y) ** 2;
-      if (dd < bd) { bd = dd; best = g; }
+      if (dd < bd) { bd = dd; bx = g.x; by = g.y; found = true; }
     }
-    if (best) { accelerateTowards(a, best.x, best.y, spd, ctx.dt, false, a.genes.size + 10); return; }
+    for (const f of ctx.fruits) {
+      if (f.t < 0.5) continue; // still falling
+      const dd = (f.x - a.x) ** 2 + (f.y - a.y) ** 2;
+      if (dd < bd) { bd = dd; bx = f.x; by = f.y; found = true; }
+    }
+    if (found) { accelerateTowards(a, bx, by, spd, ctx.dt, false, a.genes.size + 10); return; }
   }
   // if hungry and the grass underfoot is thin, drift toward greener grass by
   // following the grass gradient (a deterministic cross sample — stable target,
