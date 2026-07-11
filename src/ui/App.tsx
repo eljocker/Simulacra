@@ -4,6 +4,7 @@ import { HUD } from './HUD.tsx';
 import { GodPanel } from './GodPanel.tsx';
 import { Bitacora } from './Bitacora.tsx';
 import { Ficha } from './Ficha.tsx';
+import { RewindBar } from './RewindBar.tsx';
 
 export function App({ makeRenderer }: { makeRenderer?: RendererFactory } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -101,6 +102,7 @@ function Connected({ engine }: { engine: Engine }) {
       <Bitacora events={ui.events} />
       {ui.selected && <Ficha engine={engine} selected={ui.selected} events={ui.events} />}
       <GodPanel engine={engine} ui={ui} />
+      {ui.rewind.active && <RewindBar engine={engine} rewind={ui.rewind} />}
     </>
   );
 }

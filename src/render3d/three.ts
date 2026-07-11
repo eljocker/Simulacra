@@ -181,10 +181,11 @@ export class ThreeRenderer implements IRenderer {
   private instIds: Record<SpeciesId, number[]> = { chicken: [], sheep: [], cow: [], fox: [] };
   private moved = 0;
 
-  // selection placemark: a ground ring + a bobbing downward pin that tracks the chosen entity
+  // selection placemark: a small pin that hovers above the chosen entity (kept
+  // clear of the animal's silhouette) — plus a smooth camera follow.
   private selectedId: number | null = null;
-  private markRing!: THREE.Mesh;
   private markPin!: THREE.Mesh;
+  private following = false;
 
   setPickHandler(cb: (id: number | null) => void): void {
     this.pickCb = cb;
@@ -192,9 +193,8 @@ export class ThreeRenderer implements IRenderer {
 
   setSelected(id: number | null): void {
     this.selectedId = id;
-    const on = id != null;
-    this.markRing.visible = on;
-    this.markPin.visible = on;
+    this.markPin.visible = id != null;
+    this.following = id != null;
   }
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -295,65 +295,62 @@ export class ThreeRenderer implements IRenderer {
       this.scene.add(s);
     }
 
-    // selection placemark — a bright teal ring on the ground and a pin pointing
-    // down at the head. Both draw on top (depthTest off) so they never hide behind
-    // scenery, and they track the selected entity every frame.
-    const markColor = 0x14e0c8;
-    this.markRing = new THREE.Mesh(
-      new THREE.TorusGeometry(1, 0.085, 8, 40),
-      new THREE.MeshBasicMaterial({ color: markColor, transparent: true, opacity: 0.92, depthTest: false }),
-    );
-    this.markRing.rotation.x = -Math.PI / 2;
-    this.markRing.renderOrder = 998;
-    this.markRing.visible = false;
+    // selection placemark — a small teal pin that hovers above the head, well
+    // clear of the animal so it never covers it. Draws on top (depthTest off) so
+    // it stays visible behind hills, and gently bobs so the eye can find it.
     this.markPin = new THREE.Mesh(
-      new THREE.ConeGeometry(0.42, 1, 4),
-      new THREE.MeshBasicMaterial({ color: markColor, depthTest: false }),
+      new THREE.ConeGeometry(0.28, 0.62, 4),
+      new THREE.MeshBasicMaterial({ color: 0x14e0c8, transparent: true, opacity: 0.9, depthTest: false }),
     );
-    this.markPin.rotation.x = Math.PI; // tip points straight down
+    this.markPin.rotation.x = Math.PI; // tip points straight down at the creature
     this.markPin.renderOrder = 999;
     this.markPin.visible = false;
-    this.scene.add(this.markRing, this.markPin);
+    this.scene.add(this.markPin);
 
     this.attachControls();
   }
 
-  // Place the tracking marker over the selected entity (animal on the ground or
-  // scavenger in the air). Called every frame so it follows the creature.
-  private updateMarker(world: World): void {
+  // Hover the pin above the selected entity and glide the camera so it stays
+  // centred. Called every frame so both track the creature as it moves.
+  private updateSelection(world: World): void {
     if (this.selectedId == null) return;
-    const pulse = 1 + Math.sin(this.t * 0.14) * 0.09;
-    const bob = Math.sin(this.t * 0.1) * 0.12;
+    const bob = Math.sin(this.t * 0.1) * 0.1;
 
+    // resolve the entity's scene position + a clear gap above its head
+    let sx = 0, sz = 0, pinY = 0, focusY = 0, found = true;
     const a = world.animals.find((x) => x.id === this.selectedId);
     if (a) {
-      const sx = (a.x - world.w / 2) * SC, sz = (a.y - world.h / 2) * SC;
+      sx = (a.x - world.w / 2) * SC; sz = (a.y - world.h / 2) * SC;
       const gy = this.terrainY(sx, sz);
       const s = a.genes.size * growthFactor(a.species, a.age) * a.born * 0.085;
-      const r = Math.max(0.9, this.lieHalf[a.species] * s * 1.7);
       const top = gy + this.modelH[a.species] * s;
-      this.markRing.position.set(sx, gy + 0.06, sz);
-      this.markRing.scale.set(r * pulse, r * pulse, r * pulse);
-      this.markPin.position.set(sx, top + 1.1 + bob, sz);
-      this.markPin.scale.setScalar(Math.max(0.7, r * 0.8));
-      return;
+      pinY = top + 0.55 + this.modelH[a.species] * s * 0.35 + bob; // gap scales with the animal
+      focusY = (gy + top) * 0.5;
+    } else {
+      const sc = world.scavengers.find((x) => x.id === this.selectedId);
+      if (sc) {
+        sx = (sc.x - world.w / 2) * SC; sz = (sc.y - world.h / 2) * SC;
+        const fly = this.terrainY(sx, sz) + sc.h * SC;
+        pinY = fly + 1.6 + bob;
+        focusY = fly;
+      } else {
+        found = false; // the selected creature died — retire the marker + follow
+      }
     }
 
-    const sc = world.scavengers.find((x) => x.id === this.selectedId);
-    if (sc) {
-      const sx = (sc.x - world.w / 2) * SC, sz = (sc.y - world.h / 2) * SC;
-      const fly = this.terrainY(sx, sz) + sc.h * SC;
-      const r = 1.9;
-      this.markRing.position.set(sx, fly - 1.1, sz);
-      this.markRing.scale.set(r * pulse, r * pulse, r * pulse);
-      this.markPin.position.set(sx, fly + 2 + bob, sz);
-      this.markPin.scale.setScalar(1.2);
-      return;
-    }
+    if (!found) { this.markPin.visible = false; this.following = false; return; }
 
-    // the selected creature is gone (died) — retire the marker
-    this.markRing.visible = false;
-    this.markPin.visible = false;
+    this.markPin.position.set(sx, pinY, sz);
+
+    // smoothly glide the orbit target toward the creature so it stays centred;
+    // the user can still drag to rotate and wheel to zoom around it
+    if (this.following) {
+      const k = 0.09;
+      this.target.x += (sx - this.target.x) * k;
+      this.target.y += (focusY - this.target.y) * k;
+      this.target.z += (sz - this.target.z) * k;
+      this.updateCamera();
+    }
   }
 
   // procedural terrain height at a scene-space point (matches the mesh, so
@@ -556,7 +553,10 @@ export class ThreeRenderer implements IRenderer {
       this.scenery.add(rock);
     }
 
-    // frame the whole field (iso diamond spans ~gw+gh); user zooms from there
+    // frame the whole field (iso diamond spans ~gw+gh); user zooms from there.
+    // recentre the orbit target too, so a rebuilt world isn't left off-centre
+    // from a previous camera-follow.
+    this.target.set(0, 0, 0);
     this.viewHalf = (gw + gh) * 0.42;
     this.updateFrustum();
     this.updateCamera();
@@ -769,7 +769,7 @@ export class ThreeRenderer implements IRenderer {
       (sp.material as THREE.SpriteMaterial).opacity = lerp(0.9, 0.5, n); // fade a bit at night
     }
 
-    this.updateMarker(world);
+    this.updateSelection(world);
 
     this.renderer.render(this.scene, this.camera);
   }

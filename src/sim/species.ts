@@ -18,6 +18,8 @@ export interface SpeciesDef {
   reproCost: number; // fraction of energy passed to child
   cooldown: number; // seconds between births
   maxAge: number; // lifespan in sim-seconds (derived from a realistic span in years)
+  matureAt: number; // sim-seconds to reach adult size & breeding age — kept SHORT and
+  // independent of maxAge, so long lifespans don't leave animals tiny or infertile
   cap: number; // soft carrying capacity (stops breeding above this)
   preys: SpeciesId[]; // what it hunts (carnivore)
   fleesFrom: SpeciesId[]; // what it runs from
@@ -30,25 +32,25 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
   chicken: {
     id: 'chicken', label: 'Gallinas', emoji: '🐔', diet: 'herbivore', color: '#f4d35e',
     e0: 55, speed: 62, sense: 78, size: 6, metabolism: 2.8, moveCost: 0.03,
-    grazeGain: 18, reproduceAt: 108, reproCost: 0.5, cooldown: 9, maxAge: 6 * SECONDS_PER_YEAR, cap: 80,
+    grazeGain: 18, reproduceAt: 108, reproCost: 0.5, cooldown: 9, maxAge: 6 * SECONDS_PER_YEAR, matureAt: 40, cap: 80,
     preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true, home: [0.56, 0.16],
   },
   sheep: {
     id: 'sheep', label: 'Ovejas', emoji: '🐑', diet: 'herbivore', color: '#eef0f2',
     e0: 90, speed: 46, sense: 84, size: 10, metabolism: 2.8, moveCost: 0.03,
-    grazeGain: 28, reproduceAt: 135, reproCost: 0.5, cooldown: 13, maxAge: 11 * SECONDS_PER_YEAR, cap: 46,
+    grazeGain: 28, reproduceAt: 135, reproCost: 0.5, cooldown: 13, maxAge: 11 * SECONDS_PER_YEAR, matureAt: 74, cap: 46,
     preys: [], fleesFrom: ['fox'], catchEnergy: 0, flocks: true, home: [0.28, 0.62],
   },
   cow: {
     id: 'cow', label: 'Vacas', emoji: '🐄', diet: 'herbivore', color: '#d8dde1',
     e0: 150, speed: 34, sense: 76, size: 15, metabolism: 3.2, moveCost: 0.035,
-    grazeGain: 36, reproduceAt: 250, reproCost: 0.5, cooldown: 22, maxAge: 18 * SECONDS_PER_YEAR, cap: 24,
+    grazeGain: 36, reproduceAt: 250, reproCost: 0.5, cooldown: 22, maxAge: 18 * SECONDS_PER_YEAR, matureAt: 121, cap: 24,
     preys: [], fleesFrom: [], catchEnergy: 0, home: [0.72, 0.48],
   },
   fox: {
     id: 'fox', label: 'Zorros', emoji: '🦊', diet: 'carnivore', color: '#e8712f',
     e0: 130, speed: 88, sense: 112, size: 8, metabolism: 4.4, moveCost: 0.04,
-    grazeGain: 0, reproduceAt: 210, reproCost: 0.5, cooldown: 20, maxAge: 4 * SECONDS_PER_YEAR, cap: 34,
+    grazeGain: 0, reproduceAt: 210, reproCost: 0.5, cooldown: 20, maxAge: 4 * SECONDS_PER_YEAR, matureAt: 27, cap: 34,
     preys: ['chicken'], fleesFrom: [], catchEnergy: 72,
   },
 };
@@ -60,7 +62,7 @@ export const HERBIVORES: SpeciesId[] = ['chicken', 'sheep', 'cow'];
 // for sim dynamics, so population balance and snapshots stay unaffected.
 const NEWBORN_SCALE = 0.5; // fraction of adult size at birth
 export function growthFactor(species: SpeciesId, age: number): number {
-  const mature = SPECIES[species].maxAge * 0.28; // reaches adult size at ~28% of life
+  const mature = SPECIES[species].matureAt; // reaches adult size at maturity (independent of lifespan)
   const t = Math.max(0, Math.min(1, age / mature));
   const eased = t * (2 - t); // ease-out: fast early, tapering into adulthood
   return NEWBORN_SCALE + (1 - NEWBORN_SCALE) * eased;

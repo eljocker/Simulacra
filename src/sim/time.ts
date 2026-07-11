@@ -3,9 +3,12 @@
 // A "year" is short in real terms: it just lets an animal live out a realistic
 // span of years within a few minutes of watching.
 
-export const DAY_LENGTH = 12;      // sim-seconds in one full day↔night cycle
+// DAY_LENGTH is set so that at 1× (PACE 0.6 in the engine) one day lasts ~5 real
+// minutes: 180 sim-sec ÷ 0.6 = 300 real sec. Movement stays lively; only the
+// clock — and, through SECONDS_PER_YEAR, the ageing scale — is stretched.
+export const DAY_LENGTH = 180;     // sim-seconds in one full day↔night cycle (≈5 real min at 1×)
 export const DAYS_PER_YEAR = 2;    // days that make up one year of a life
-export const SECONDS_PER_YEAR = DAY_LENGTH * DAYS_PER_YEAR; // 24s lived = one "year"
+export const SECONDS_PER_YEAR = DAY_LENGTH * DAYS_PER_YEAR; // one lived "year"
 
 export function years(ageSeconds: number): number {
   return ageSeconds / SECONDS_PER_YEAR;

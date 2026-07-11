@@ -16,6 +16,15 @@ const DENSITIES = [
 ];
 const near = (a: number, b: number) => Math.abs(a - b) < 0.01;
 
+// how long one in-game day lasts in real time at a given speed (1× = 5 min)
+const REAL_SECONDS_PER_DAY_1X = 300;
+function dayLength(speed: number): string {
+  const secs = REAL_SECONDS_PER_DAY_1X / speed;
+  if (secs < 60) return `${Math.round(secs)} s`;
+  const m = Math.floor(secs / 60), s = Math.round(secs % 60);
+  return s ? `${m} min ${s} s` : `${m} min`;
+}
+
 export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
   const [collapsed, setCollapsed] = useState(window.innerWidth <= 640);
   const [saves, setSaves] = useState<SnapshotRecord[]>([]);
@@ -35,8 +44,9 @@ export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
   const load = async (id: string) => { await engine.loadSaved(id); };
   const del = async (id: string) => { await engine.deleteSaved(id); refresh(); };
 
+  const past = ui.rewind;
   return (
-    <section className={`dock${collapsed ? ' collapsed' : ''}`}>
+    <section className={`dock${collapsed ? ' collapsed' : ''}${past.active ? ' viewing-past' : ''}`}>
       <div className="dock-head" onClick={() => setCollapsed((c) => !c)}>
         <span className="halo" />
         <h2>Panel divino</h2>
@@ -56,15 +66,22 @@ export function GodPanel({ engine, ui }: { engine: Engine; ui: UIState }) {
         </div>
 
         <div className="transport">
-          <button className="b" onClick={() => engine.toggle()}>{ui.running ? '❚❚ Pausa' : '▶ Reanudar'}</button>
+          <button className="b" disabled={past.active} onClick={() => engine.toggle()}>{ui.running ? '❚❚ Pausa' : '▶ Reanudar'}</button>
           <button className="b" onClick={() => engine.reset()}>↺ Reiniciar</button>
         </div>
+        <button className="b wide past-btn" style={{ marginBottom: 10 }}
+          disabled={past.count < 2 || past.active}
+          title={past.count < 2 ? 'Todavía no hay suficiente historia' : 'Retroceder y ver lo que pasó'}
+          onClick={() => engine.enterRewind()}>
+          <span className="e">⏪</span> Ver el pasado
+        </button>
         <div className="speed">
           <span className="lab">Ritmo</span>
           <input type="range" min={0.5} max={8} step={0.5} value={ui.speed}
             onChange={(e) => engine.setSpeed(parseFloat(e.target.value))} />
           <span className="val">{ui.speed}×</span>
         </div>
+        <div className="speed-hint">🕐 A <b>1×</b> un día dura <b>5 min</b> reales · ahora un día ≈ <b>{dayLength(ui.speed)}</b></div>
 
         <div className="group" style={{ marginTop: 15 }}>
           <div className="glab">🌍 Mundo <span className="ghint">reinicia la granja</span></div>

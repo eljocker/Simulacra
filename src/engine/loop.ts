@@ -14,6 +14,11 @@ const HISTORY_MAX = 200;
 const AUTOSAVE_EVERY = 15;
 const PACE = 0.6; // global calm factor: 1× runs the ecosystem at this fraction of real time
 const BASE_AREA = 1152 * 720; // reference terrain area for density = 1
+const KEYFRAME_EVERY = 1.5; // sim-seconds between rewind keyframes
+const KEYFRAME_MAX = 220; // ~330 sim-sec of history (≈5.5 min at 1×)
+
+// a captured moment for the rewind buffer
+type Keyframe = { day: number; clock: number; snap: WorldSnapshot };
 
 export class Engine {
   world: World;
@@ -30,6 +35,16 @@ export class Engine {
   private histAcc = 0;
   private autoAcc = 0;
   private history: HistoryPoint[] = [];
+
+  // rewind (read-only "view the past") — a real playback: re-simulate forward
+  private keyframes: Keyframe[] = [];
+  private kfAcc = 0;
+  private rewinding = false;
+  private rewindPlaying = false;
+  private rewindIndex = 0; // segment start (which keyframe the playback is on)
+  private rewindSegT = 0;  // sim-seconds elapsed into the current segment
+  private wasRunning = true;
+  private liveSnap: WorldSnapshot | null = null;
 
   constructor(private canvas: HTMLCanvasElement, makeRenderer: RendererFactory = default2D) {
     const { w, h } = this.baseDims();
@@ -79,7 +94,25 @@ export class Engine {
   }
 
   private pushStats(): void {
-    this.store.setFrame(this.world.stats(), this.history, this.world.events, this.selectedInfo(), this.roster());
+    const rewind = {
+      active: this.rewinding,
+      playing: this.rewindPlaying,
+      index: this.rewindIndex,
+      count: this.keyframes.length,
+      day: this.world.day,
+      clock: this.world.clock,
+    };
+    this.store.setFrame(this.world.stats(), this.history, this.world.events, this.selectedInfo(), this.roster(), rewind);
+  }
+
+  // advance the world by simDt sim-seconds in fixed substeps (shared by live + playback)
+  private step(simDt: number): void {
+    let dt = simDt;
+    while (dt > 0) {
+      const s = Math.min(FIXED, dt);
+      this.world.tick(s);
+      dt -= s;
+    }
   }
 
   select(id: number | null): void {
@@ -102,22 +135,26 @@ export class Engine {
       let real = (now - this.last) / 1000;
       this.last = now;
       if (real > 0.1) real = 0.1;
-      if (this.running) {
-        let dt = real * this.speed * PACE;
-        while (dt > 0) {
-          const step = Math.min(FIXED, dt);
-          this.world.tick(step);
-          dt -= step;
-        }
+      if (this.rewinding) {
+        if (this.rewindPlaying) { this.advancePlayback(real * this.speed * PACE); this.statAcc += real; }
+      } else if (this.running) {
+        const simDt = real * this.speed * PACE;
+        this.step(simDt);
         this.statAcc += real;
         this.histAcc += real * this.speed;
+        // capture rewind keyframes as sim-time advances (never while viewing the past)
+        this.kfAcc += simDt;
+        while (this.kfAcc >= KEYFRAME_EVERY) {
+          this.kfAcc -= KEYFRAME_EVERY;
+          this.captureKeyframe();
+        }
       }
       this.renderer.draw(this.world);
       if (this.statAcc >= 0.2) {
         this.statAcc = 0;
         this.pushStats();
       }
-      if (this.histAcc >= 1) {
+      if (!this.rewinding && this.histAcc >= 1) {
         this.histAcc = 0;
         const s = this.world.stats();
         this.history.push({ chicken: s.chicken, sheep: s.sheep, cow: s.cow, fox: s.fox, grass: s.grass });
@@ -141,10 +178,11 @@ export class Engine {
     this.renderer.resize(w, h);
   }
   setRunning(v: boolean): void { this.running = v; this.store.setRunning(v); }
-  toggle(): void { this.setRunning(!this.running); }
+  toggle(): void { if (this.rewinding) return; this.setRunning(!this.running); }
   setSpeed(v: number): void { this.speed = v; this.store.setSpeed(v); }
 
   private reconfigure(): void {
+    this.abortRewind();
     const { w, h } = this.baseDims();
     this.world.resize(w, h);
     this.world.capScale = this.capScale(w, h);
@@ -160,6 +198,7 @@ export class Engine {
   setDensity(v: number): void { this.density = v; this.reconfigure(); }
 
   reset(): void {
+    this.abortRewind();
     this.world.seed();
     this.history = [];
     this.selected = null;
@@ -168,11 +207,93 @@ export class Engine {
     this.pushStats();
   }
   intervene(iv: Intervention): void {
+    if (this.rewinding) return; // the past is read-only — no meddling with what already happened
     this.world.applyIntervention(iv);
+  }
+
+  // ---- rewind: step back through captured moments and watch them, read-only ----
+  private captureKeyframe(): void {
+    this.keyframes.push({ day: this.world.day, clock: this.world.clock, snap: this.world.serialize() });
+    if (this.keyframes.length > KEYFRAME_MAX) this.keyframes.shift();
+  }
+
+  enterRewind(): void {
+    if (this.rewinding || this.keyframes.length < 2) return;
+    this.wasRunning = this.running;
+    this.liveSnap = this.world.serialize(); // remember the present, to return to it later
+    this.rewinding = true;
+    this.rewindPlaying = false;
+    this.setRunning(false); // freeze the live sim while we relive the past
+    // open a little back from the edge so there's room to press play and watch it flow
+    this.seekRewind(Math.max(0, this.keyframes.length - 1 - Math.floor(this.keyframes.length / 3)));
+  }
+
+  // jump to a keyframe and pause there (scrubbing the timeline)
+  seekRewind(index: number): void {
+    if (!this.rewinding || !this.keyframes.length) return;
+    const i = Math.max(0, Math.min(this.keyframes.length - 1, Math.round(index)));
+    this.rewindIndex = i;
+    this.rewindSegT = 0;
+    this.rewindPlaying = false;
+    this.world.load(this.keyframes[i].snap);
+    this.pushStats();
+  }
+
+  setRewindPlaying(on: boolean): void {
+    if (!this.rewinding) return;
+    // can't play past the newest recorded moment
+    if (on && this.rewindIndex >= this.keyframes.length - 1) this.seekRewind(0);
+    this.rewindPlaying = on;
+    this.pushStats();
+  }
+  toggleRewindPlay(): void { this.setRewindPlaying(!this.rewindPlaying); }
+
+  // Reproduce the past forward: re-simulate deterministically from the current
+  // keyframe, snapping back to each true keyframe as it's crossed so the replay
+  // stays faithful to what actually happened.
+  private advancePlayback(simDt: number): void {
+    const last = this.keyframes.length - 1;
+    let remaining = simDt;
+    while (remaining > 0 && this.rewindIndex < last) {
+      const toBoundary = KEYFRAME_EVERY - this.rewindSegT;
+      const s = Math.min(remaining, toBoundary);
+      this.step(s);
+      this.rewindSegT += s;
+      remaining -= s;
+      if (this.rewindSegT >= KEYFRAME_EVERY - 1e-6) {
+        this.rewindIndex++;
+        this.rewindSegT = 0;
+        this.world.load(this.keyframes[this.rewindIndex].snap); // re-sync to ground truth
+      }
+    }
+    if (this.rewindIndex >= last) { this.rewindPlaying = false; } // reached the present edge
+  }
+
+  exitRewind(): void {
+    if (!this.rewinding) return;
+    if (this.liveSnap) this.world.load(this.liveSnap); // restore the present exactly as we left it
+    this.liveSnap = null;
+    this.rewinding = false;
+    this.rewindPlaying = false;
+    this.setRunning(this.wasRunning);
+    this.pushStats();
+  }
+
+  // drop rewind without restoring — used when the world is being replaced (reset/load)
+  private abortRewind(): void {
+    if (this.rewinding) this.setRunning(this.wasRunning);
+    this.rewinding = false;
+    this.rewindPlaying = false;
+    this.liveSnap = null;
+    this.keyframes = [];
+    this.kfAcc = 0;
+    this.rewindIndex = 0;
+    this.rewindSegT = 0;
   }
 
   // ---- persistence ----
   private applySnapshot(snap: WorldSnapshot): void {
+    this.abortRewind();
     this.world.load(snap);
     this.terrainSize = Math.max(this.terrainSize, 1); // keep UI factor; caps come from snapshot
     this.history = [];
@@ -182,6 +303,7 @@ export class Engine {
     this.pushStats();
   }
   async saveAuto(): Promise<void> {
+    if (this.rewinding) return; // the world is showing the past — don't persist that as "current"
     try {
       await putSnapshot({ id: AUTOSAVE_ID, name: 'Sesión anterior', createdAt: Date.now(), day: this.world.day, auto: true, snapshot: this.world.serialize() });
     } catch { /* storage unavailable */ }

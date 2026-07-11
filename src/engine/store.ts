@@ -26,6 +26,16 @@ export interface SelectedInfo {
   state?: Scavenger['state']; // scavengers only: cruise | dive | feed
 }
 
+// Read-only "view the past" mode: scrub through captured keyframes.
+export interface RewindUI {
+  active: boolean;
+  playing: boolean; // the past is flowing forward (vs paused on a moment)
+  index: number; // current keyframe being viewed
+  count: number; // keyframes available (also gates the "ver el pasado" button)
+  day: number;   // calendar of the viewed moment
+  clock: number;
+}
+
 export interface UIState {
   stats: Stats;
   history: HistoryPoint[];
@@ -36,6 +46,7 @@ export interface UIState {
   density: number;
   selected: SelectedInfo | null;
   roster: Roster;
+  rewind: RewindUI;
 }
 
 const EMPTY_STATS: Stats = {
@@ -43,12 +54,13 @@ const EMPTY_STATS: Stats = {
 };
 
 const EMPTY_ROSTER: Roster = { chicken: [], sheep: [], cow: [], fox: [], scavenger: [] };
+const EMPTY_REWIND: RewindUI = { active: false, playing: false, index: 0, count: 0, day: 1, clock: 0.5 };
 
 // Minimal external store compatible with React's useSyncExternalStore.
 export class Store {
   private state: UIState = {
     stats: EMPTY_STATS, history: [], events: [], running: true, speed: 1,
-    terrainSize: 1, density: 1, selected: null, roster: EMPTY_ROSTER,
+    terrainSize: 1, density: 1, selected: null, roster: EMPTY_ROSTER, rewind: EMPTY_REWIND,
   };
   private listeners = new Set<() => void>();
 
@@ -64,8 +76,8 @@ export class Store {
     for (const l of this.listeners) l();
   }
 
-  setFrame(stats: Stats, history: HistoryPoint[], events: LifeEvent[], selected: SelectedInfo | null, roster: Roster): void {
-    this.emit({ stats, history, events, selected, roster });
+  setFrame(stats: Stats, history: HistoryPoint[], events: LifeEvent[], selected: SelectedInfo | null, roster: Roster, rewind: RewindUI): void {
+    this.emit({ stats, history, events, selected, roster, rewind });
   }
   setWorldCfg(terrainSize: number, density: number): void {
     this.emit({ terrainSize, density });

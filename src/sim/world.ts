@@ -440,7 +440,7 @@ export class World {
 
       // reproduction: a well-fed, rested adult breeds (offspring inherits
       // mutated genes, so traits drift across generations)
-      if (!asleep && a.energy > def.reproduceAt && a.cooldown <= 0 && a.age > def.maxAge * 0.1 && pop[a.species] < def.cap * this.capScale) {
+      if (!asleep && a.energy > def.reproduceAt && a.cooldown <= 0 && a.age > def.matureAt * 0.36 && pop[a.species] < def.cap * this.capScale) {
         a.energy *= def.reproCost;
         a.cooldown = def.cooldown;
         if (a.species === 'chicken') {
